@@ -71,14 +71,14 @@ head(clinical)
 
 ```{r download}
 # download data -----------------------------------------------------------
-# first, in order to not use personal directories, must use a .Renviron created
-# where my master script will be located.
+# first, in order to protect personal data, a .Renviron will be created.
+dir <- #my personal directory 
 GDCdownload(query_clinical,
             directory = "dir"
             )
 
-# the download goes to a file where there is all TCGA data saved, so it can be used
-# in any other project.
+# the download goes to a file where all TCGA data is being saved, so it can be used
+# in any other projects.
 ```
 
 ```{r prepare-data}
@@ -87,7 +87,7 @@ tcga_se <- GDCprepare(query_TCGA, summarizedExperiment = TRUE)
 ```
 
 ```{r input}
-# el objeto preparado (se) se guarda en la carpeta de preparados por si lo queremos
+# el objeto preparado (se) se guarda también en la carpeta de "preparados" por si lo queremos
 # usar en otro proyecto.
 
 saveRDS(tcga_se,
