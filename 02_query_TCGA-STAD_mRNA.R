@@ -1,4 +1,4 @@
-# Install packages CBIO --------------------------------------------------------
+# Install packages -------------------------------------------------------------
 bioc_packages <- c(
   "TCGAbiolinks",
   "SummarizedExperiment"
@@ -13,16 +13,17 @@ for (pkg in bioc_packages) {
 library(TCGAbiolinks)
 library(SummarizedExperiment)
 
-# directory definition ---------------------------------------------------------
+# directory setup --------------------------------------------------------------
 tcga_dir <- Sys.getenv("TCGA_DATA")
 
-# building a query -------------------------------------------------------------
+# query building ---------------------------------------------------------------
 query <- GDCquery(project = "TCGA-STAD",
                   data.category = "Transcriptome Profiling",
                   data.type = "Gene Expression Quantification",
                   workflow.type = "STAR - Counts",
                   access = "open")
 
+# query download ---------------------------------------------------------------
 GDCdownload(
   query,
   directory = tcga_dir)
