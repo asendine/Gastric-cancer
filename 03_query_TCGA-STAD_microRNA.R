@@ -6,15 +6,17 @@ library(SummarizedExperiment)
 tcga_dir <- Sys.getenv("TCGA_DATA")
 
 # building a query -------------------------------------------------------------
-query <- GDCquery(project = "TCGA-STAD",
+query_microRNA <- GDCquery(project = "TCGA-STAD",
                   data.category = "Transcriptome Profiling",
                   data.type = "miRNA Expression Quantification")
 GDCdownload(
-  query,
+  query_microRNA,
   directory = tcga_dir)
 
-se <- GDCprepare(query)
+se_microRNA <- GDCprepare(query_microRNA, 
+                          directory = tcga_dir, 
+                          summarizedExperiment = TRUE)
 
-saveRDS(se,
+saveRDS(se_microRNA,
         file = file.path(tcga_dir, "Prepared", "TCGA_STAD_mirna_se.rds")
 )

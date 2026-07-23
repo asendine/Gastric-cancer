@@ -6,7 +6,7 @@ library(SummarizedExperiment)
 tcga_dir <- Sys.getenv("TCGA_DATA")
 
 # building a query -------------------------------------------------------------
-query <- GDCquery(
+query_maf <- GDCquery(
   project = "TCGA-STAD",
   data.category = "Simple Nucleotide Variation",
   data.type = "Masked Somatic Mutation",
@@ -15,11 +15,12 @@ query <- GDCquery(
 )
 
 GDCdownload(
-  query,
+  query_maf,
   directory = tcga_dir
 )
 
-maf <- GDCprepare(query)
+maf <- GDCprepare(query_maf, 
+                     directory = tcga_dir)
 
 saveRDS(
   maf,

@@ -6,19 +6,22 @@ library(SummarizedExperiment)
 tcga_dir <- Sys.getenv("TCGA_DATA")
 
 # building a query -------------------------------------------------------------
-query <- GDCquery(
+query_met <- GDCquery(
   project = "TCGA-STAD",
   data.category = "DNA Methylation",
+  data.type = "Methylation Beta Value",
   platform = "Illumina Human Methylation 450",
   access = "open"
 )
 
 GDCdownload(
-  query,
+  query_met,
   directory = tcga_dir)
 
-se <- GDCprepare(query)
+se_met <- GDCprepare(query_met, 
+                 directory = tcga_dir, 
+                 summarizedExperiment = TRUE)
 
-saveRDS(se,
+saveRDS(se_met,
         file = file.path(tcga_dir, "Prepared", "TCGA_STAD_methylation_450K_se.rds")
 )

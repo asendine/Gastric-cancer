@@ -6,20 +6,26 @@ library(SummarizedExperiment)
 tcga_dir <- Sys.getenv("TCGA_DATA")
 
 # building a query -------------------------------------------------------------
-query <- GDCquery(
+query_cnv <- GDCquery(
   project = "TCGA-STAD",
   data.category = "Copy Number Variation",
-  data.type = "Gene Level Copy Number Scores"
+  data.type = "Gene Level Copy Number",
+  experimental.strategy = "Genotyping Array",
+  platform = "Affymetrix SNP 6.0",
+  workflow.type = "ASCAT3",
+  access = "open"
 )
 
 GDCdownload(
-  query,
+  query_cnv,
   directory = tcga_dir
 )
 
-cnv_gene <- GDCprepare(query)
+se_cnv <- GDCprepare(query_cnv,
+                     directory = tcga_dir,
+                     summarizedExperiment = TRUE)
 
 saveRDS(
-  cnv_gene,
-  file = file.path(tcga_dir, "Prepared", "TCGA_STAD_gene_cnv.rds")
+  se_cnv,
+  file = file.path(tcga_dir, "Prepared", "TCGA_STAD_cnv_se.rds")
 )

@@ -17,7 +17,7 @@ library(SummarizedExperiment)
 tcga_dir <- Sys.getenv("TCGA_DATA")
 
 # query building ---------------------------------------------------------------
-query <- GDCquery(project = "TCGA-STAD",
+query_mRNA <- GDCquery(project = "TCGA-STAD",
                   data.category = "Transcriptome Profiling",
                   data.type = "Gene Expression Quantification",
                   workflow.type = "STAR - Counts",
@@ -25,11 +25,13 @@ query <- GDCquery(project = "TCGA-STAD",
 
 # query download ---------------------------------------------------------------
 GDCdownload(
-  query,
+  query_mRNA,
   directory = tcga_dir)
 
-se <- GDCprepare(query)
+se_mRNA <- GDCprepare(query_mRNA, 
+                 directory = tcga_dir, 
+                 summarizedExperiment = TRUE)
 
-saveRDS(se,
+saveRDS(se_mRNA,
         file = file.path(tcga_dir, "Prepared", "TCGA_STAD_rnaseq_se.rds")
 )
