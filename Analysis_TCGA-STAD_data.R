@@ -2,8 +2,7 @@
 bioc_packages <- c(
   "cBioPortalData",
   "TCGAbiolinks",
-  "SummarizedExperiment",
-  "maftools"
+  "SummarizedExperiment"
 )
 
 for (pkg in bioc_packages) {
@@ -15,7 +14,6 @@ for (pkg in bioc_packages) {
 library(cBioPortalData)
 library(TCGAbiolinks)
 library(SummarizedExperiment)
-library(maftools)
 
 # directory definition ---------------------------------------------------------
 cbio_dir <- Sys.getenv("CBIO_DATA")

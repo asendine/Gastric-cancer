@@ -27,14 +27,13 @@ studies[
 study_ids <- c("stad_tcga_pub")
 
 # query download ---------------------------------------------------------------
-for (id in study_ids) {
-  downloadStudy(
-    cancer_study_id = id,
-    use_cache = cbio_dir,
-    force = FALSE,
-    ask = FALSE
+# si interesa obtener varios estudios se puede hacer un for pero no es típico
+downloadStudy( 
+  cancer_study_id = id,
+  use_cache = cbio_dir,
+  force = FALSE,
+  ask = FALSE
   )
-}
 
 # Retreiving cBioPortal data ---------------------------------------------------
 # idealmente se haría un multiassay:
