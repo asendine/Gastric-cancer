@@ -97,4 +97,3 @@ mrna <- read.delim(file.path(stad_dir, "data_mrna_seq_v2_rsem.txt"),
 mut <- read.delim(file.path(stad_dir, "data_mutations.txt"),comment.char = "#",
                   check.names = FALSE)
 
-
