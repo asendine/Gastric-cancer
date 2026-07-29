@@ -82,23 +82,22 @@ columns
 # data_mrna_seq_v2_rsem, data_mutations.
 
 # OBTENCIÓN DATOS --------------------------------------------------------------
-clin_pat_pub <- read.delim(file.path(stad_dir, "data_clinical_patient.txt"),
+cbiopub_clin_pat <- read.delim(file.path(stad_dir, "data_clinical_patient.txt"),
                                comment.char = "#",check.names = FALSE)
 
-clin_sample_pub <- read.delim(file.path(stad_dir, "data_clinical_sample.txt"),
-                              comment.char = "#",check.names = FALSE)
+cbiopub_clin_sample <- read.delim(file.path(stad_dir, "data_clinical_sample.txt"),
+                                  comment.char = "#",check.names = FALSE)
 
-cna_pub <- read.delim(file.path(stad_dir, "data_cna.txt"),check.names = FALSE)
+cbiopub_cna <- read.delim(file.path(stad_dir, "data_cna.txt"),check.names = FALSE)
 
-cna_lin_pub <- read.delim(file.path(stad_dir, "data_linear_cna.txt"),
-                         check.names = FALSE)
+cbiopub_cna_lin <- read.delim(file.path(stad_dir, "data_linear_cna.txt"),
+                              check.names = FALSE)
 
-mrna_pub <- read.delim(file.path(stad_dir, "data_mrna_seq_v2_rsem.txt"),
-                   check.names = FALSE)
+cbiopub_mrna <- read.delim(file.path(stad_dir, "data_mrna_seq_v2_rsem.txt"),
+                           check.names = FALSE)
 
-mut_pub <- read.delim(file.path(stad_dir, "data_mutations.txt"),comment.char = "#",
-                  check.names = FALSE)
-
+cbiopub_mut <- read.delim(file.path(stad_dir, "data_mutations.txt"),comment.char = "#",
+                          check.names = FALSE)
 
 #-------------------------------------------------------------------------------
 # STUDY 2 DATA -----------------------------------------------------------------
@@ -159,19 +158,13 @@ columns
 # data_mrna_seq_v2_rsem, data_mutations.
 
 # OBTENCIÓN DATOS --------------------------------------------------------------
-clin_pat_gdc <- read.delim(file.path(stad_dir, "data_clinical_patient.txt"),
+cbiogdc_clin_pat <- read.delim(file.path(stad_dir, "data_clinical_patient.txt"),
                            comment.char = "#",check.names = FALSE)
 
-clin_sample_gdc <- read.delim(file.path(stad_dir, "data_clinical_sample.txt"),
+cbiogdc_clin_sample <- read.delim(file.path(stad_dir, "data_clinical_sample.txt"),
                               comment.char = "#",check.names = FALSE)
 
-cna_gdc <- read.delim(file.path(stad_dir, "data_cna.txt"), check.names = FALSE)
+cbiogdc_cna <- read.delim(file.path(stad_dir, "data_cna.txt"), check.names = FALSE)
 
-cna_lin_gdc <- read.delim(file.path(stad_dir, "data_mrna_seq_fpkm.txt"),
+cbiogdc_mrna_fpkm <- read.delim(file.path(stad_dir, "data_mrna_seq_fpkm.txt"),
                           check.names = FALSE)
-
-mrna_gdc <- read.delim(file.path(stad_dir, ""),
-                       check.names = FALSE)
-
-mut_gdc <- read.delim(file.path(stad_dir, ""), comment.char = "#",
-                      check.names = FALSE)
