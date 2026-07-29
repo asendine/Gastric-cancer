@@ -39,7 +39,7 @@ stad_tcga_pub_ma <- cBioDataPack(
   ask = FALSE
 )
 
-# pero si no funciona porque hay variables que no casan, se sigue descargando todo
+# pero si no funciona porque es incompatible se sigue descargando todo
 # manualmente
 
 # query download ---------------------------------------------------------------
@@ -54,7 +54,7 @@ downloadStudy(
 # es de interés importar se obtienen los nombres de todas las columnas:
 
 # primero se descomprime manualmente el tar.gz y se define stad_dir
-stad_dir <- file.path(cbio_dir, "stad_tcga_pub", "stad_tcga_pub")
+stad_dir <- file.path(cbio_dir, "stad_tcga_pub")
 
 # CHECK COLUMNAS ---------------------------------------------------------------
 # all file routes are retrieved from the decompressed original file 
@@ -115,8 +115,9 @@ stad_tcga_gdc_ma <- cBioDataPack(
   ask = FALSE
 )
 
-# pero si no funciona porque hay variables que no casan, se sigue descargando todo
-# manualmente
+# pero si no funciona por incompatibilidad del paquete, se sigue descargando todo
+# manualmente. En este segundo caso se debería haber construido pero el aviso 
+# indica que el archivo timeline_treatment se ha omitido.
 
 # query download ---------------------------------------------------------------
 downloadStudy( 
@@ -130,7 +131,7 @@ downloadStudy(
 # es de interés importar se obtienen los nombres de todas las columnas:
 
 # primero se descomprime manualmente el tar.gz y se define stad_dir
-stad_dir <- file.path(cbio_dir, "stad_tcga_gdc", "stad_tcga_gdc")
+stad_dir <- file.path(cbio_dir, "stad_tcga_gdc")
 
 # CHECK COLUMNAS ---------------------------------------------------------------
 # all file routes are retrieved from the decompressed original file 
@@ -166,11 +167,11 @@ clin_sample_gdc <- read.delim(file.path(stad_dir, "data_clinical_sample.txt"),
 
 cna_gdc <- read.delim(file.path(stad_dir, "data_cna.txt"), check.names = FALSE)
 
-cna_lin_gdc <- read.delim(file.path(stad_dir, "data_linear_cna.txt"),
+cna_lin_gdc <- read.delim(file.path(stad_dir, "data_mrna_seq_fpkm.txt"),
                           check.names = FALSE)
 
-mrna_gdc <- read.delim(file.path(stad_dir, "data_mrna_seq_v2_rsem.txt"),
+mrna_gdc <- read.delim(file.path(stad_dir, ""),
                        check.names = FALSE)
 
-mut_gdc <- read.delim(file.path(stad_dir, "data_mutations.txt"), comment.char = "#",
+mut_gdc <- read.delim(file.path(stad_dir, ""), comment.char = "#",
                       check.names = FALSE)
