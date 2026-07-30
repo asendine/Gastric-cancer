@@ -14,6 +14,8 @@ for (pkg in bioc_packages) {
 library(cBioPortalData)
 library(TCGAbiolinks)
 library(SummarizedExperiment)
+library(dplyr)
+library(pheatmap)
 
 # directory definition ---------------------------------------------------------
 cbio_dir <- Sys.getenv("CBIO_DATA")
@@ -36,6 +38,8 @@ cbiopub_cna_lin <- read.delim(file.path(pub_stad_dir, "data_linear_cna.txt"),
 
 cbiopub_mrna <- read.delim(file.path(pub_stad_dir, "data_mrna_seq_v2_rsem.txt"),
                            check.names = FALSE)
+cbiopub_zmrna <- read.delim(file.path(pub_stad_dir, "data_mrna_seq_v2_rsem_zscores_ref_all_samples.txt"),
+                            comment.char = "#", check.names = FALSE)
 
 cbiopub_mut <- read.delim(file.path(pub_stad_dir, "data_mutations.txt"),comment.char = "#",
                           check.names = FALSE)
@@ -76,3 +80,41 @@ rnaseq_se <- readRDS(file.path(tcga_dir, "Prepared", "TCGA_STAD_rnaseq_se.rds"))
         # Luego cluster jerárqico mediante GISTIC2.0 https://github.com/broadinstitute/gistic2
 # 1.1.2 - ... hasta (S7)
 # 1.2 - DIFINIR QUÉ VARIABLES Y MÉTODO USAN PARA EL CLUSTERING molecular data with iCluster+ (paquete bioc)
+
+# ------------------------------------------------------------------------------
+
+assayNames(rnaseq_se)
+fpkm <- assay(rnaseq_se, "fpkm_unstrand")
+
+prop_baja_expresion <- rowMeans(fpkm <= 0.2)
+genes_keep <- prop_baja_expresion < 0.75
+fpkm_filt <- fpkm[genes_keep, , drop = FALSE]
+
+# batch effects con BLISS
+
+media_fpkm <- rowMeans(fpkm_filt, na.rm = TRUE)
+keep_mean <- is.finite(media_fpkm) & media_fpkm >= 10
+fpkm_mean10 <- fpkm_filt[keep_mean, , drop = FALSE]
+media_mean10 <- media_fpkm[keep_mean]
+sd_fpkm <- apply(fpkm_mean10, 1, sd, na.rm = TRUE)
+cv_fpkm <- sd_fpkm / media_mean10
+keep_cv <- is.finite(cv_fpkm)
+fpkm_cv <- fpkm_mean10[keep_cv, , drop = FALSE]
+cv_fpkm <- cv_fpkm[keep_cv]
+orden_cv <- order(cv_fpkm, decreasing = TRUE)
+n_top <- ceiling(0.25 * nrow(fpkm_cv))
+top_idx <- orden_cv[seq_len(n_top)]
+fpkm_top25 <- fpkm_cv[top_idx, , drop = FALSE]
+log_fpkm_top25 <- log2(fpkm_top25 + 1)
+pheatmap(
+  log_fpkm_top25,
+  scale = "row",
+  cluster_rows = TRUE,
+  cluster_cols = TRUE,
+  clustering_distance_rows = "euclidean",
+  clustering_distance_cols = "euclidean",
+  clustering_method = "ward.D2",
+  show_rownames = FALSE,
+  show_colnames = FALSE,
+  main = "TCGA-STAD: 25% de genes con mayor CV"
+)
