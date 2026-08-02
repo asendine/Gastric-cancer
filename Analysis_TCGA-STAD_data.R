@@ -212,8 +212,25 @@ design <- model.matrix(~ 0 + cluster)
 colnames(design) <- levels(cluster)
 # se crea el voom
 v <- voom(dge, design)
+# se ajusta el modelo lineal
 fit <- lmFit(v, design)
+# se organizan los contrastes entre clusters para hacer la estadística con eBayes
+contrasts <- makeContrasts(C1all = C1 - (C2+C3+C4)/3,
+                           C2all = C2 - (C1+C3+C4)/3,
+                           C3all = C3 - (C1+C2+C4)/3,
+                           C4all = C4 - (C1+C2+C3)/3, levels = design)
+fit_clusters <- contrasts.fit(fit, contrasts)
+fit_treat <- treat(fit_clusters, lfc = 1)
+genes_C1 <- topTreat(fit_treat, coef = "C1all", number = Inf, p.value = 0.05, sort.by = "logFC")
+genes_C2 <- topTreat(fit_treat, coef = "C2all", number = Inf, p.value = 0.05, sort.by = "logFC")
+genes_C3 <- topTreat(fit_treat, coef = "C3all", number = Inf, p.value = 0.05, sort.by = "logFC")
+genes_C4 <- topTreat(fit_treat, coef = "C4all", number = Inf, p.value = 0.05, sort.by = "logFC")
+top10_C1 <- head(genes_C1, 10)
+top10_C2 <- head(genes_C2, 10)
+top10_C3 <- head(genes_C3, 10)
+top10_C4 <- head(genes_C4, 10)
 
+# Ahora habría que buscar mediante el entrezid o gene symbol qué genes son usando enrichGO
 
 
 # 3- hacer el heatmap con esos genes 
