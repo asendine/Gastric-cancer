@@ -214,12 +214,14 @@ colnames(design) <- levels(cluster)
 v <- voom(dge, design)
 # se ajusta el modelo lineal
 fit <- lmFit(v, design)
-# se organizan los contrastes entre clusters para hacer la estadística con eBayes
+# se organizan los contrastes entre clusters
 contrasts <- makeContrasts(C1all = C1 - (C2+C3+C4)/3,
                            C2all = C2 - (C1+C3+C4)/3,
                            C3all = C3 - (C1+C2+C4)/3,
                            C4all = C4 - (C1+C2+C3)/3, levels = design)
+# pendiente aclarar makeContrasts() y contrasts.fit()
 fit_clusters <- contrasts.fit(fit, contrasts)
+# treat testea cambios diferentes a un límite dado, eBayes() testea si hay diferencias respecto a 0
 fit_treat <- treat(fit_clusters, lfc = 1)
 genes_C1 <- topTreat(fit_treat, coef = "C1all", number = Inf, p.value = 0.05, sort.by = "logFC")
 genes_C2 <- topTreat(fit_treat, coef = "C2all", number = Inf, p.value = 0.05, sort.by = "logFC")
