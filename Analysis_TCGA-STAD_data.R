@@ -32,6 +32,7 @@ library(cluster)
 library(edgeR)
 library(limma)
 library(grid)
+library(ggplot2)
 
 # directory definition ---------------------------------------------------------
 cbio_dir <- Sys.getenv("CBIO_DATA")
@@ -90,6 +91,7 @@ rnaseq_se <- readRDS(file.path(tcga_dir, "Prepared", "TCGA_STAD_rnaseq_se.rds"))
 # ------------------------------------------------------------------------------
 # DESCUBRIMIENTO DE LOS CLÚSTERS # ---------------------------------------------
 # ------------------------------------------------------------------------------
+
 assayNames(rnaseq_se)
 # unstranded: raw count
 # stranded first: raw count a partir del 1a cDNA
@@ -142,6 +144,44 @@ ind <- order(gene_mad, decreasing = TRUE)[seq_len(top)]
 tpm_filt <- tpm_filt_log[ind, , drop=FALSE]
 dim(tpm_filt)
 # quedan 5349 genes
+
+# se realiza un análisis del efecto batch simplemente por añadir calidad al workflow
+# ya que sabemos por la documentación oficial que solamente hay un ligero batch effect en 
+# datos de miRNA (1/4 analizados) pero no es trascendente. También se puede hacer la 
+# visualización directa en la web de MDAnderson sin tener que hacerlo en R (tienen un
+# web browser para ello, PCA Plus).
+# A partir del nombre de las muestras se obtiene el id de placa y el TSS (centro)
+# que estan en las posiciones 6 y 2 respectivamente (TCGA-BR-4257-01A-01R-1131-13).
+
+barcode_parts <- do.call(rbind, strsplit(colnames(rnaseq_se), "-", fixed = TRUE))
+colData(rnaseq_se)$TSS <- factor(barcode_parts[, 2])
+colData(rnaseq_se)$PlateId <- factor(barcode_parts[, 6])
+
+batch_info <- as.data.frame(colData(rnaseq_se)[,c("TSS", "PlateId")])
+head(batch_info)
+
+pca_batch <- prcomp(t(tpm_filt), center = TRUE, scale. = FALSE)
+variance_explained <- 100*pca_batch$sdev^2/sum(pca_batch$sdev^2)
+sample_position <- match(rownames(pca_batch$x), colnames(rnaseq_se))
+pca_batch_df <- data.frame(sample = rownames(pca_batch$x),
+                           PC1 = pca_batch$x[, 1],
+                           PC2 = pca_batch$x[, 2],
+                           PlateId = colData(rnaseq_se)$PlateId[sample_position],
+                           TSS = colData(rnaseq_se)$TSS[sample_position])
+
+ggplot(pca_batch_df, aes(x = PC1, y = PC2, color = TSS)) +
+  geom_point(size = 2, alpha = 0.8) +
+  labs(x = paste0("PC1 (", round(variance_explained[1], 1), "%)"),
+       y = paste0("PC2 (", round(variance_explained[2], 1), "%)"),
+       color = "TSS") +
+  theme_bw()
+
+ggplot(pca_batch_df, aes(x = PC1, y = PC2, color = PlateId)) +
+  geom_point(size = 2, alpha = 0.8) +
+  labs(x = paste0("PC1 (", round(variance_explained[1], 1), "%)"),
+       y = paste0("PC2 (", round(variance_explained[2], 1), "%)"),
+       color = "ID Placa") +
+  theme_bw()
 
 # 1- separar estas muestras en clústers
 
@@ -292,7 +332,7 @@ gene_cluster <- factor(genes_heatmap_info$gene_cluster, levels = c("C1", "C2", "
 sample_cluster <- factor(cluster[colnames(mat_z)], levels = c("C1", "C2", "C3", "C4"))
 
 
-# el heatmap
+# heatmap
 # modificado para obtener los clusters ordenados y añadidos debajo como bloques
 # por colores
 cluster_colors <- c(
@@ -330,7 +370,7 @@ sample_id_mat <- substr(colnames(mat_z), 1, 15)
 posicion <- match(sample_id_mat, cbiopub_clin_sample$SAMPLE_ID)
 sum(is.na(posicion))
 # hay 138 NAs, es decir 274 muestras etiquetadas con subtype de las 412, pero en 
-# cbio constan 295 muestras etiquetadas. Hay 295-274 muestras que no estan entre las 412?
+# cbio constan 295 muestras etiquetadas. Hay 21 muestras que no estan entre las 412?
 
 molecular_subtype <- cbiopub_clin_sample$MOLECULAR_SUBTYPE[posicion]
 names(molecular_subtype) <- colnames(mat_z)
