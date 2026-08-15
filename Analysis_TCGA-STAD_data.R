@@ -379,77 +379,41 @@ for (i in 1:nrow(mat_heatmap)) {
   gene_sd <- sd(mat_heatmap[i, ])
   mat_z[i, ] <- (mat_heatmap[i, ] - gene_mean)/gene_sd
 }
-
 # por último se crea la agrupación por clusters para las filas y las columnas
 gene_cluster <- factor(genes_heatmap_info$gene_cluster, levels = c("C1", "C2", "C3", "C4"))
-
 sample_cluster <- factor(cluster[colnames(mat_z)], levels = c("C1", "C2", "C3", "C4"))
 
 # se buscan duplicados y missmatches
 anyDuplicated(genes_heatmap_info$gene_id)
-
-stopifnot(
-  identical(
-    rownames(mat_z),
-    genes_heatmap_info$gene_id
-  )
-)
+# hay un duplicado, pero no debería ser problemático
+stopifnot(identical(rownames(mat_z), genes_heatmap_info$gene_id))
 
 # heatmap
 # modificado para obtener los clusters ordenados y añadidos debajo como bloques
 # por colores
-cluster_colors <- c(
-  "C1" = "#E64B35",
-  "C2" = "#4DBBD5",
-  "C3" = "#00A087",
-  "C4" = "#F39B7F")
+cluster_colors <- c("C1" = "#E64B35","C2" = "#4DBBD5","C3" = "#00A087","C4" = "#F39B7F")
 
+# anotación inferior 1: clústers
 annotation_clusters <- HeatmapAnnotation(
   Cluster = anno_block(
     gp = gpar(fill = cluster_colors),
     labels = c("C1", "C2", "C3", "C4"),
-    labels_gp = gpar(col = "white", fontface = "bold")
-  ),
-  which = "column"
-)
-
-# h1
-Heatmap(
-  mat_z,
-  name = "Z-score",
-  row_labels = genes_heatmap_info$gene_symbol,
-  row_split = gene_cluster,
-  cluster_row_slices = FALSE,
-  column_split = sample_cluster,
-  cluster_column_slices = FALSE,
-  cluster_rows = TRUE,
-  cluster_columns = TRUE,
-  bottom_annotation = annotation_clusters,
-  show_column_names = FALSE,
-  column_gap = unit(2, "mm"),
-  row_gap = unit(2, "mm"),
-  row_title = "Genes DE")
+    labels_gp = gpar(col = "white", fontface = "bold")),
+  which = "column")
 
 # finalmente se relaciona con los molecular subtypes obtenidos en las 290 y pico muestras
-
 sample_id_mat <- substr(colnames(mat_z), 1, 15)
 posicion <- match(sample_id_mat, cbiopub_clin_sample$SAMPLE_ID)
 sum(is.na(posicion))
 # hay 138 NAs, es decir 274 muestras etiquetadas con subtype de las 412, pero en 
 # cbio constan 295 muestras etiquetadas. Hay 21 muestras que no estan entre las 412?
-
 molecular_subtype <- cbiopub_clin_sample$MOLECULAR_SUBTYPE[posicion]
 names(molecular_subtype) <- colnames(mat_z)
 head(molecular_subtype)
-subtype_colors <- c(
-  "CIN" = "#3C5488",
-  "EBV" = "#00A087",
-  "GS" = "#FFD700",
-  "MSI" = "#E64B35"
-)
+subtype_colors <- c("CIN" = "#3C5488", "EBV" = "#00A087", "GS" = "#FFD700", "MSI" = "#E64B35")
 
-# h2
-annotation_bottom <- HeatmapAnnotation(
+# anotación inferior 2: Molecular subtype
+annotation_ms <- HeatmapAnnotation(
   Cluster = anno_block(
     gp = gpar(fill = cluster_colors[c("C1", "C2", "C3", "C4")]),
     labels = c("C1", "C2", "C3", "C4"),
@@ -458,22 +422,29 @@ annotation_bottom <- HeatmapAnnotation(
   col = list(Molecular_subtype = subtype_colors),
   na_col = "#D9D9D9",
   annotation_height = unit(c(6, 4),"mm"),
-  show_annotation_name = c(Cluster = FALSE, 
-                           Molecular_subtype = TRUE),
+  show_annotation_name = c(Cluster = FALSE, Molecular_subtype = TRUE),
   which = "column")
 
 Heatmap(
   mat_z,
   name = "Z-score",
   row_labels = genes_heatmap_info$gene_symbol,
+  row_names_gp = gpar(fontsize = 7),
   column_split = sample_cluster,
   row_split = gene_cluster,
   cluster_row_slices = FALSE,
   cluster_column_slices = FALSE,
   cluster_columns = TRUE,
   cluster_rows = TRUE,
-  bottom_annotation = annotation_bottom,
+  bottom_annotation = annotation_ms,
   show_column_names = FALSE,
   column_gap = unit(2, "mm"),
   row_gap = unit(2, "mm")
 )
+
+# Quizás haya que separar en más clústers... parece que 6 podría ser mejor.
+# Revisaré consensus cluster plus - bioconductor y repetiré el analisis
+
+# Posteriormente se realizará un análisis de significación biológica para caracterizar cada clúster.
+# la intención es describir cada gen dentro de cada clúster, encontrar posibles incongruencias.
+# posteriormente buscar biomarcadores e hacer una matriz de muestras x biomarcador (y clúster) y plotearlo?
