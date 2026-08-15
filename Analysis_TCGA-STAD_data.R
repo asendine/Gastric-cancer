@@ -2,7 +2,8 @@
 bioc_packages <- c(
   "cBioPortalData",
   "TCGAbiolinks",
-  "SummarizedExperiment"
+  "SummarizedExperiment",
+  "PCAtools"
 )
 
 for (pkg in bioc_packages) {
@@ -11,7 +12,7 @@ for (pkg in bioc_packages) {
 }
 
 # install-packages-CRAN --------------------------------------------------------
-packages <- c("data.table", "dataframeexplorer", "devtools")
+packages <- c("data.table", "dataframeexplorer", "devtools","vegan")
 
 for (pkg in packages) {
   if (!requireNamespace(pkg, quietly = TRUE))
@@ -33,6 +34,8 @@ library(edgeR)
 library(limma)
 library(grid)
 library(ggplot2)
+library(PCAtools)
+library(vegan)
 
 # directory definition ---------------------------------------------------------
 cbio_dir <- Sys.getenv("CBIO_DATA")
@@ -76,21 +79,9 @@ methylation_450K_se <- readRDS(
 mirna_se <- readRDS(file.path(tcga_dir, "Prepared", "TCGA_STAD_mirna_se.rds"))
 rnaseq_se <- readRDS(file.path(tcga_dir, "Prepared", "TCGA_STAD_rnaseq_se.rds"))
 
-# OBJETIVO 1: CLASIFICAR LOS 443 CASOS DE GDCportal
-# 1 - MEDIANTE RÉPLICA ALGORITMO (DIFÍCIL?)
-# 1.1 - DIFINIR QUÉ VARIABLES Y MÉTODO USAN PARA EL CLUSTERING Platform-Specific
-# 1.1.1 - (S2)SCNA (somatic copy number alterations): SCNAs vs localización cromosoma.
-        # Luego cluster jerárqico mediante GISTIC2.0 https://github.com/broadinstitute/gistic2
-# 1.1.2 - ... hasta (S7)
-# 1.2 - DIFINIR QUÉ VARIABLES Y MÉTODO USAN PARA EL CLUSTERING molecular data with iCluster+ (paquete bioc)
-
-********************************************************************************
+# ******************************************************************************
 # EMPEZAMOS CON RNA-SEQ*********************************************************
-********************************************************************************
-
-# ------------------------------------------------------------------------------
-# DESCUBRIMIENTO DE LOS CLÚSTERS # ---------------------------------------------
-# ------------------------------------------------------------------------------
+# ******************************************************************************
 
 assayNames(rnaseq_se)
 # unstranded: raw count
@@ -99,9 +90,10 @@ assayNames(rnaseq_se)
 # tpm_unstrand: Transcripts Per Million calculated using unstranded raw counts.
 # fpkm_unstrand: Fragments Per Kilobase of transcript per Million mapped reads calculated from unstranded counts.
 # fpkm_uq_unstrand: Upper Quartile (UQ) normalized FPKM.
-
 tpm <- assay(rnaseq_se, "tpm_unstrand") # todas las muestras del proyecto TCGA-STAD con datos rna-seq
 dim(tpm)
+class(tpm)
+anyNA(tpm)
 # esto es 448 muestras
 summary(colSums(tpm)) # paso extra cortesía de GPT, debería sumar 10^6
 sum(tpm == 0, na.rm = TRUE)
@@ -109,28 +101,128 @@ sum(tpm == 0, na.rm = TRUE)
 # eliminamos las muestras con valor 0 en todos sus genes
 tpm_filt <- tpm[, colSums(tpm > 0) > 0, drop = FALSE]
 dim(tpm_filt)
-detect_dupl_cols(tpm_filt, return_type = "col_names", duplicate_col = "right")
-# no se elimina nada, todo parece ok
-
 # ahora se debería ver si todas las muestras que hay son de tumor o tejido normal
 # se ve que en los nombres de las columnas, es decir muestras, la posición 14-15
 # indica si es tumor (01) o tejido normal (11)
 tpm_tumor <- tpm_filt[, substr(colnames(tpm_filt), 14, 15) == "01", drop = FALSE]
 dim(tpm_tumor)
-# hay 412 muestras de tumor
-
+# hay 412 muestras de tumor, se revisa posible duplicados de muestras
+patient_id <- substr(colnames(tpm_tumor), 1, 12)
+sample_id  <- substr(colnames(tpm_tumor), 1, 15)
+anyDuplicated(patient_id)
+anyDuplicated(sample_id)
+table(patient_id)[table(patient_id) > 1]
+table(sample_id)[table(sample_id) > 1]
+# no se elimina nada, todo parece ok
 # ahora se mantendran los genes con un tpm >= 1 en el 25% de las muestras
 # se calcula qué número es el 25%
 n_min <- ceiling(0.25*ncol(tpm_tumor))
-# ahora buscamos el dataset en el que los valores sean >= 1 en 103 columnas o más
+# se suma el valor de cada tpm por fila si es >= 1 y, se indica TRUE si el resultado es >= 103
 genes_exp <- rowSums(tpm_tumor >= 1) >= n_min
-# nos queda un objeto con valores TRUE/FALSE con su fila según si cumple o no las condiciones
-tpm_filt <- tpm_tumor[genes_exp, , drop = FALSE]
-dim(tpm_filt)
+# nos queda una variable con valores TRUE/FALSE por fila según si cumple o no las condiciones
+tpm_filt2 <- tpm_tumor[genes_exp, , drop = FALSE]
+dim(tpm_filt2)
 # quedan 21k genes
-# aquí se deberían evaluar si hay outliers o batch effect
 # se transforman los datos a log
-tpm_filt_log <- log2(tpm_filt + 1)
+tpm_filt_log <- log2(tpm_filt2 + 1)
+
+# Buscamos BACTH EFFECT
+# se realiza un análisis del efecto batch simplemente por añadir calidad al workflow
+# ya que sabemos por la documentación oficial que solamente hay un ligero batch effect en 
+# datos de miRNA (1/4 analizados) pero no es trascendente. También se puede hacer la 
+# visualización directa en la web de MDAnderson sin tener que hacerlo en R (tienen un
+# web browser para ello, PCA Plus).
+# A partir del nombre de las muestras se obtiene el id de placa y el TSS (origen muestra)
+# que estan en las posiciones 6 y 2 respectivamente (TCGA-BR-4257-01A-01R-1131-13).
+barcode_parts <- do.call(rbind, strsplit(colnames(rnaseq_se), "-", fixed = TRUE))
+colData(rnaseq_se)$TSS <- factor(barcode_parts[, 2])
+colData(rnaseq_se)$PlateId <- factor(barcode_parts[, 6])
+batch_info <- as.data.frame(colData(rnaseq_se)[,c("TSS", "PlateId")])
+
+pca_batch <- prcomp(t(tpm_filt_log), center = TRUE, scale. = FALSE)
+variance_explained <- 100*pca_batch$sdev^2/sum(pca_batch$sdev^2)
+sample_position <- match(rownames(pca_batch$x), colnames(rnaseq_se))
+pca_batch_df <- data.frame(sample = rownames(pca_batch$x),
+                           PC1 = pca_batch$x[, 1],
+                           PC2 = pca_batch$x[, 2],
+                           PlateId = batch_info$PlateId[sample_position],
+                           TSS = batch_info$TSS[sample_position])
+
+pca_background <- pca_batch_df[, c("PC1", "PC2")]
+
+ggplot(pca_batch_df, aes(PC1, PC2)) + 
+  geom_point(data = pca_background, aes(PC1, PC2), inherit.aes = FALSE, 
+             color = "grey85", size = 0.7) + 
+  geom_point(color = "#D55E00", size = 1.3, alpha = 0.9) + 
+  facet_wrap(~ TSS, ncol = 5) +
+  labs(title = "PCA: distribución de las muestras por TSS", 
+       x = paste0("PC1 (", round(variance_explained[1], 1), "%)"),
+       y = paste0("PC2 (", round(variance_explained[2], 1), "%)")) +
+  theme_bw() +
+  theme(legend.position = "none", strip.text = element_text(face = "bold"))
+
+ggplot(pca_batch_df, aes(PC1, PC2)) + 
+  geom_point(data = pca_background, aes(PC1, PC2), inherit.aes = FALSE, 
+             color = "grey85", size = 0.7) + 
+  geom_point(color = "#0072B2", size = 1.3, alpha = 0.9) + 
+  facet_wrap(~ PlateId, ncol = 5) +
+  labs(title = "PCA: distribución de las muestras por ID de placa", 
+       x = paste0("PC1 (", round(variance_explained[1], 1), "%)"),
+       y = paste0("PC2 (", round(variance_explained[2], 1), "%)")) +
+  theme_bw() +
+  theme(legend.position = "none", strip.text = element_text(face = "bold"))
+
+# Ahora se buscan OUTLIERS
+# para buscar outliers se realiza un PCA. Se usa PCAtools, a ver qué tal
+pca_outliers <- PCAtools::pca(mat = tpm_filt_log, center = TRUE, 
+                              scale = FALSE, removeVar = NULL)
+
+# screeplot para ver % var explicada por cada componente
+PCAtools::screeplot(pcaobj = pca_outliers, 
+                    components = PCAtools::getComponents(pca_outliers, 1:20), 
+                    title = "PCA de expresión: análisis de outliers")
+
+# no está mal hacer un pairsplot entre las diferentes componentes, pero si hay
+# muchas muestras y queremos ver muchas componentes, entonces no se verá bien
+PCAtools::pairsplot(pcaobj = pca_outliers, 
+                    components = PCAtools::getComponents(pca_outliers, 1:4),
+                    triangle  = TRUE) # a partir de 4 la cosa empeora
+# a partir de los plots anteriores, no se aprecian outliers
+
+# ahora se puede buscar si hay genes que dominen alguna componente concreta
+# se obtiene la info de genes
+gene_info <- as.data.frame(rowData(rnaseq_se))
+# se obtiene la posición de las filas de los genes que nos interesan con match
+gene_index <- match(rownames(tpm_filt_log), rownames(rnaseq_se))
+# se crea el dataset específico con ambas notaciones
+gene_map <- data.frame(ensembl_id = rownames(tpm_filt_log),
+                       gene_name = gene_info$gene_name[gene_index])
+# a partir de aquí se crea una función para determinar los genes que más contribuyen
+get_top_genes <- function(pca_object, pc, gene_map, n = 10) { # dado un pca, una componente, la leyenda y el nº de genes a comprobar
+  loading_values <- pca_object$loadings[, pc] 
+  # se obtienen los pesos
+  top_idx <- order(abs(loading_values), decreasing = TRUE)[seq_len(n)]
+  # se obtienen los n pesos por valor absoluto decreciente
+  ensembl_ids <- rownames(pca_object$loadings)[top_idx]
+  # se obtienen los ids de los genes con esos pesos
+  data.frame(PC = pc,
+             gene_name = gene_map$gene_name[match(ensembl_ids, gene_map$ensembl_id)],
+             ensembl_id = ensembl_ids,
+             loading = loading_values[top_idx],
+             contribution_pct = 100*loading_values[top_idx]^2)
+  # se hace un dataframe con la pc elegida, se busca el gene name con la leyenda indicada,
+  # se indica el ensemble id, el peso obtenido y las contribuciones
+  }
+
+# aquí se puede ver qué genes dominan las componentes en este caso la 1 y 2
+cont_PC1 <- get_top_genes(pca_outliers, "PC1", gene_map, n = 10)
+cont_PC2 <- get_top_genes(pca_outliers, "PC2", gene_map, n = 10)
+cont_PC1
+cont_PC2
+
+# ------------------------------------------------------------------------------
+# DESCUBRIMIENTO DE LOS CLÚSTERS # ---------------------------------------------
+# ------------------------------------------------------------------------------
 # Ahora se filtra por variabilidad de expresión (median absolute deviation) buscando el 25% más variable
 gene_mad <- apply(tpm_filt_log, 1, mad) # esto da un vector de mad aplicado a cada fila (1) de la matrix indicada
 # igual que genes_exp pero numérico en vez de lógico
@@ -141,55 +233,17 @@ ind <- order(gene_mad, decreasing = TRUE)[seq_len(top)]
 # se obtienen las posiciones (filas) del 1 al 5349
 
 # se limita el dataset a las filas que hay en ind
-tpm_filt <- tpm_filt_log[ind, , drop=FALSE]
-dim(tpm_filt)
+tpm_ind <- tpm_filt_log[ind, , drop=FALSE]
+dim(tpm_ind)
 # quedan 5349 genes
 
-# se realiza un análisis del efecto batch simplemente por añadir calidad al workflow
-# ya que sabemos por la documentación oficial que solamente hay un ligero batch effect en 
-# datos de miRNA (1/4 analizados) pero no es trascendente. También se puede hacer la 
-# visualización directa en la web de MDAnderson sin tener que hacerlo en R (tienen un
-# web browser para ello, PCA Plus).
-# A partir del nombre de las muestras se obtiene el id de placa y el TSS (centro)
-# que estan en las posiciones 6 y 2 respectivamente (TCGA-BR-4257-01A-01R-1131-13).
 
-barcode_parts <- do.call(rbind, strsplit(colnames(rnaseq_se), "-", fixed = TRUE))
-colData(rnaseq_se)$TSS <- factor(barcode_parts[, 2])
-colData(rnaseq_se)$PlateId <- factor(barcode_parts[, 6])
-
-batch_info <- as.data.frame(colData(rnaseq_se)[,c("TSS", "PlateId")])
-head(batch_info)
-
-pca_batch <- prcomp(t(tpm_filt), center = TRUE, scale. = FALSE)
-variance_explained <- 100*pca_batch$sdev^2/sum(pca_batch$sdev^2)
-sample_position <- match(rownames(pca_batch$x), colnames(rnaseq_se))
-pca_batch_df <- data.frame(sample = rownames(pca_batch$x),
-                           PC1 = pca_batch$x[, 1],
-                           PC2 = pca_batch$x[, 2],
-                           PlateId = colData(rnaseq_se)$PlateId[sample_position],
-                           TSS = colData(rnaseq_se)$TSS[sample_position])
-
-ggplot(pca_batch_df, aes(x = PC1, y = PC2, color = TSS)) +
-  geom_point(size = 2, alpha = 0.8) +
-  labs(x = paste0("PC1 (", round(variance_explained[1], 1), "%)"),
-       y = paste0("PC2 (", round(variance_explained[2], 1), "%)"),
-       color = "TSS") +
-  theme_bw()
-
-ggplot(pca_batch_df, aes(x = PC1, y = PC2, color = PlateId)) +
-  geom_point(size = 2, alpha = 0.8) +
-  labs(x = paste0("PC1 (", round(variance_explained[1], 1), "%)"),
-       y = paste0("PC2 (", round(variance_explained[2], 1), "%)"),
-       color = "ID Placa") +
-  theme_bw()
-
-# 1- separar estas muestras en clústers
-
+# separar estas muestras en clústers
 # como queremos clusterizar muestras (columnas) habría que transponer la matriz 
-# para que la disimilitud se calcule entre los genes
+# para que la disimilitud se calcule usando los genes como variables
 
 # primero se transpone la matriz, se hace el z-score y se vuelve a transponer de nuevo.
-tpm_z <- t(scale(t(tpm_filt)))
+tpm_z <- t(scale(t(tpm_ind)))
 sum(is.na(tpm_z))
 
 # clustering más habitual: euclidean + ward.D2. Distancia + clust
@@ -197,7 +251,7 @@ d <- dist(t(tpm_z), method = "euclidean")
 hcl <- hclust(d, method = "ward.D2")
 plot(hcl, labels = FALSE, hang = -1, main = "Hierarchical clust: euc + wardd2", xlab = "muestras")
 
-# clustering 2: 1-Pearson + average, mide correlaciones entre rows y hace el average?
+# clustering 2: 1-Pearson + average, mide correlaciones entre columnas (muestras)
 # se calcula la correlacion y la dist
 corPearson <- cor(tpm_z, method = "pearson", use = "pairwise.complete.obs")
 dist_pearson <- as.dist(1 - corPearson)
@@ -209,16 +263,14 @@ plot(hcl_p, labels = FALSE, hang = -1, main = "Hierarchical clust: 1-Pearson + a
 # veamos la n en cada clúster para cada método
 clusters <- cutree(hcl, k = 4)
 table(clusters)
+# clusters es un named int, es decir, tiene el nombre de cada muestra y el clúster 
+# al que pertenece
 
-clustersp <- cutree(hcl_p, k = 4)
-table(clustersp)
-
-# se forman 4 clusters escalonados en ambos métodos
-# por ahora se usará eucliden+ward.D2
 # ------------------------------------------------------------------------------
 # CARACTERIZACIÓN DE LOS CLÚSTERS # --------------------------------------------
 # ------------------------------------------------------------------------------
-# 2- buscar los genes diferencialmente más expresados de cada clúster (~10)
+
+# buscar los genes diferencialmente más expresados de cada clúster (~10)
 # ahora hay que hacer el análisis de expresión diferencial por cluster
 # obtenemos los datos de conteos crudos para poder usar mejor edger y limma
 counts <- assay(rnaseq_se, "unstranded")
@@ -226,32 +278,37 @@ dim(counts)
 # se obtienen las muestras de tumor primario
 counts <- counts[, names(clusters), drop = FALSE]
 dim(counts)
-stopifnot(identical(colnames(counts), names(clusters))) # para ver facilmente que los nombres sean iguales
-# se crea el objeto DGEList
+stopifnot(identical(colnames(counts), names(clusters))) # para ver fácilmente que los nombres sean iguales
+
+# se crea el objeto DGEList: ojo, en vez de hacer genes x muestras, se realiza el análisis
+# de expresión genes x clústers
 # primero se obtiene el vector categórico que hace de "meta" de las muestras
+# haces factor() de clusters cogiendo la estructura de counts, indicando los niveles y etiquetas
 cluster <- factor(clusters[colnames(counts)], levels = 1:4, labels = c("C1","C2","C3","C4"))
-# esta línea es compleja... te dice que la muestra x pertenece al clúster y y así con todas
-# se crea el DGEList
 dge <- DGEList(counts = counts, group = cluster)
+# ---------
 # se hace un filtrado de genes preventivo con filterByExpr(). Filtrado por defecto, sin más.
 keep <- filterByExpr(dge, group = cluster)
-# si se elimina un gen, recalcula los counts por muestra, esto es cosa de GPT, nunca lo he usado:
+# si se elimina un gen, recalcula los tamaños de biblioteca como la suma de los genes conservados
+# esto es cosa de GPT, nunca lo he usado:
 dge <- dge[keep, , keep.lib.sizes = FALSE]
 dge <- calcNormFactors(dge, method = "TMM")
+# ---------
 # se hace la matriz de diseño siguiendo el modelo cluster
 design <- model.matrix(~ 0 + cluster)
 head(design)
 # se cambian los nombres de las columnas
 colnames(design) <- levels(cluster)
 head(design)
-# se crea el voom para hacer el modelo lineal
+# se crea el voom para hacer el modelo lineal (dge + matriz coeficientes)
+# v contiene logCPM a partir de raw counts
 v <- voom(dge, design)
 # se ajusta el modelo lineal
 fit <- lmFit(v, design)
 # se organizan los contrastes entre clusters, se compara la expresión de cada clúster
 # con la media de expresiones del resto... es una forma pero hay otras, tipo ver
 # genes expresados diferencialmente exclusivos de cada cluster, podria ser interesante?
-# sintaxis es diferentes contrastes como un vector + matriz de diseño con los parámetros como columnas
+# sintaxis es: diferentes contrastes como un vector + los niveles = matriz de diseño.
 contrasts <- makeContrasts(C1all = C1 - (C2+C3+C4)/3,
                            C2all = C2 - (C1+C3+C4)/3,
                            C3all = C3 - (C1+C2+C4)/3,
@@ -261,22 +318,19 @@ contrasts <- makeContrasts(C1all = C1 - (C2+C3+C4)/3,
 # realiza el ajuste con contrastes
 fit_clusters <- contrasts.fit(fit, contrasts)
 # treat testea cambios diferentes a un límite dado (lfc > x), eBayes() testea si hay diferencias respecto a 0
-fit_treat <- treat(fit_clusters, lfc = 0.95)
+fit_ebayes <- eBayes(fit_clusters)
 # se obtienen los top-ranked genes más expresados diferencialmente de cada contraste
 # lfc = 1 ya filtra por valor absoluto, "logFC" también
-genes_C1 <- topTreat(fit_treat, coef = "C1all", number = Inf, p.value = 0.05, sort.by = "logFC")
-genes_C2 <- topTreat(fit_treat, coef = "C2all", number = Inf, p.value = 0.05, sort.by = "logFC")
-genes_C3 <- topTreat(fit_treat, coef = "C3all", number = Inf, p.value = 0.05, sort.by = "logFC")
-genes_C4 <- topTreat(fit_treat, coef = "C4all", number = Inf, p.value = 0.05, sort.by = "logFC")
+genes_C1 <- topTable(fit_ebayes, coef = "C1all", number = Inf, p.value = 0.05, sort.by = "logFC")
+genes_C2 <- topTable(fit_ebayes, coef = "C2all", number = Inf, p.value = 0.05, sort.by = "logFC")
+genes_C3 <- topTable(fit_ebayes, coef = "C3all", number = Inf, p.value = 0.05, sort.by = "logFC")
+genes_C4 <- topTable(fit_ebayes, coef = "C4all", number = Inf, p.value = 0.05, sort.by = "logFC")
 info_C1 <- head(genes_C1, 10) # si lfc = 0 salen muchos genes, pero si lfc = 1 solo se filtran 5!!
-info_C2 <- head(genes_C2, 10) # finalmente indico 0.96 para que salgan 11 genes en C1
+info_C2 <- head(genes_C2, 10) # finalmente indico 0.95 para que salgan 11 genes en C1
 info_C3 <- head(genes_C3, 10) # con esto tenemos los genes en formato gene_id
 info_C4 <- head(genes_C4, 10)
 
 # 3- hacer el heatmap
-# Primero se prepara la información principal de cada clúster
-gene_info <- as.data.frame(rowData(rnaseq_se))
-head(gene_info)
 # C1 ----------------------------------------------------------
 info_C1$gene_id <- rownames(info_C1)
 # la siguiente línea con match busca el valor de gene_name en gene_info antes definido
@@ -309,8 +363,8 @@ genes_heatmap_info <- rbind(info_C1, info_C2, info_C3, info_C4)
 dim(genes_heatmap_info)
 
 # Segundo se construye la matriz de expresión
-# resulta que el objeto "v" creado por voom contiene la relación entre el gene_id
-# y las muestras. Los valores no sé exactamente qué son
+# el objeto "v" creado por voom contiene la relación entre el gene_id
+# y las muestras. Los valores son logCPM. $weights contiene los pesos
 gene_ids <- genes_heatmap_info$gene_id
 # se filtran los 40 genes que nos interesan
 mat_heatmap <- v$E[gene_ids, , drop = FALSE]
@@ -331,6 +385,15 @@ gene_cluster <- factor(genes_heatmap_info$gene_cluster, levels = c("C1", "C2", "
 
 sample_cluster <- factor(cluster[colnames(mat_z)], levels = c("C1", "C2", "C3", "C4"))
 
+# se buscan duplicados y missmatches
+anyDuplicated(genes_heatmap_info$gene_id)
+
+stopifnot(
+  identical(
+    rownames(mat_z),
+    genes_heatmap_info$gene_id
+  )
+)
 
 # heatmap
 # modificado para obtener los clusters ordenados y añadidos debajo como bloques
@@ -349,11 +412,14 @@ annotation_clusters <- HeatmapAnnotation(
   ),
   which = "column"
 )
+
 # h1
 Heatmap(
   mat_z,
   name = "Z-score",
   row_labels = genes_heatmap_info$gene_symbol,
+  row_split = gene_cluster,
+  cluster_row_slices = FALSE,
   column_split = sample_cluster,
   cluster_column_slices = FALSE,
   cluster_rows = TRUE,
@@ -401,6 +467,8 @@ Heatmap(
   name = "Z-score",
   row_labels = genes_heatmap_info$gene_symbol,
   column_split = sample_cluster,
+  row_split = gene_cluster,
+  cluster_row_slices = FALSE,
   cluster_column_slices = FALSE,
   cluster_columns = TRUE,
   cluster_rows = TRUE,
