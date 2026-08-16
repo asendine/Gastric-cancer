@@ -3,39 +3,29 @@ bioc_packages <- c(
   "cBioPortalData",
   "TCGAbiolinks",
   "SummarizedExperiment",
-  "PCAtools"
+  "PCAtools",
+  "ConsensusClusterPlus"
 )
-
 for (pkg in bioc_packages) {
   if (!requireNamespace(pkg, quietly = TRUE))
     BiocManager::install(pkg)
 }
 
 # install-packages-CRAN --------------------------------------------------------
-packages <- c("data.table", "dataframeexplorer", "devtools","vegan")
-
+packages <- c("data.table", "dataframeexplorer", "devtools", "NMF")
 for (pkg in packages) {
   if (!requireNamespace(pkg, quietly = TRUE))
     install.packages(pkg)
 }
 
 # libraries --------------------------------------------------------------------
-library(cBioPortalData)
-library(TCGAbiolinks)
-library(SummarizedExperiment)
-library(dplyr)
-library(pheatmap)
-library(data.table)
-library(dataframeexplorer)
-library(devtools)
-library(ComplexHeatmap)
-library(cluster)
-library(edgeR)
-library(limma)
-library(grid)
-library(ggplot2)
-library(PCAtools)
-library(vegan)
+libraries <- c("cBioPortalData", "TCGAbiolinks", "SummarizedExperiment", "dplyr",
+               "ComplexHeatmap", "data.table", "dataframeexplorer", "devtools", 
+               "cluster", "edgeR", 'limma', 'grid', 'ggplot2', 'PCAtools', 
+               'ConsensusClusterPlus', 'NMF')
+for (i in libraries) {
+  library(i, character.only = TRUE)
+}
 
 # directory definition ---------------------------------------------------------
 cbio_dir <- Sys.getenv("CBIO_DATA")
@@ -237,7 +227,6 @@ tpm_ind <- tpm_filt_log[ind, , drop=FALSE]
 dim(tpm_ind)
 # quedan 5349 genes
 
-
 # separar estas muestras en clústers
 # como queremos clusterizar muestras (columnas) habría que transponer la matriz 
 # para que la disimilitud se calcule usando los genes como variables
@@ -246,7 +235,7 @@ dim(tpm_ind)
 tpm_z <- t(scale(t(tpm_ind)))
 sum(is.na(tpm_z))
 
-# clustering más habitual: euclidean + ward.D2. Distancia + clust
+# clustering 1: euclidean + ward.D2. Distancia + clust
 d <- dist(t(tpm_z), method = "euclidean")
 hcl <- hclust(d, method = "ward.D2")
 plot(hcl, labels = FALSE, hang = -1, main = "Hierarchical clust: euc + wardd2", xlab = "muestras")
@@ -259,16 +248,112 @@ dist_pearson <- as.dist(1 - corPearson)
 hcl_p <- hclust(dist_pearson, method = "average")
 plot(hcl_p, labels = FALSE, hang = -1, main = "Hierarchical clust: 1-Pearson + average", xlab = "muestras")
 
-# aparentemente k = 4 parece lo mejor en ambas opciones
-# veamos la n en cada clúster para cada método
-clusters <- cutree(hcl, k = 4)
-table(clusters)
-# clusters es un named int, es decir, tiene el nombre de cada muestra y el clúster 
-# al que pertenece
+# clustering 3: ConsensusClusterPlus + euclidean/ward.d2
+ccp_input <- as.matrix(tpm_z)
+cc_dir <- file.path(getwd(), "output", "consensus_euclidean_wardD2")
+cc_dir <- normalizePath(cc_dir, winslash = "/", mustWork = TRUE)
+cc_results <- ConsensusClusterPlus(
+  d             = ccp_input,
+  maxK          = 6,             # evalúa k = 2,...,6
+  reps          = 500,           # 500 remuestreos
+  pItem         = 0.80,          # 80% de las muestras en cada repetición
+  pFeature      = 0.80,          # 80% de los genes en cada repetición
+  clusterAlg    = "hc",          # clustering jerárquico
+  distance      = "euclidean",
+  innerLinkage  = "ward.D2",     # algoritmo aplicado en cada repetición
+  finalLinkage  = "average",     # agrupación final de la matriz de consenso
+  seed          = 1234,
+  title         = cc_dir,
+  plot          = "png",
+  writeTable    = FALSE,
+  verbose       = TRUE
+)
+# clustering 4: ConsensusClusterPlus + 1-pearson + average
+cc_dir2 <- file.path(getwd(), "output", "consensus_pearson_average")
+cc_dir2 <- normalizePath(cc_dir2, winslash = "/", mustWork = TRUE)
+cc_resultsp <- ConsensusClusterPlus(
+  d             = ccp_input,
+  maxK          = 6,             # evalúa k = 2,...,6
+  reps          = 500,           # 500 remuestreos
+  pItem         = 0.80,          # 80% de las muestras en cada repetición
+  pFeature      = 0.80,          # 80% de los genes en cada repetición
+  clusterAlg    = "hc",          # clustering jerárquico
+  distance      = "pearson",
+  innerLinkage  = "average",     # algoritmo aplicado en cada repetición
+  finalLinkage  = "average",     # agrupación final de la matriz de consenso
+  seed          = 1234,
+  title         = cc_dir2,
+  plot          = "png",
+  writeTable    = FALSE,
+  verbose       = TRUE
+)
+# ------------------------------------------------------------------------------
+# ------------------------------------------------------------------------------
+# Al final tras probar diferentes métodos de clusterización con tpm_z:
+# 1- cada método obtiene unas agrupaciones concretas
+# 2- no hay una solidez en cuanto a las agrupaciones, algunos clústers son difusos
+# 3- el consensus con pearson obtiene un mejor perfil con k = 3
+
+# por ende, pienso que el problema de esta baja concordancia viene dada por el número
+# de genes, el cual creo que puede ser excesivamente alto y dificulte la agrupación
+# en clústers.
+
+# cambio de planes, se prueba el método del artículo pero con las 412 muestras
+# primero creamos la matrix NMF (Non-negative matrix factorization), se vuelve 
+# al punto donde se creaba gene_mad y se modifica:
+
+ind_nmf <- order(gene_mad, decreasing = TRUE)[seq_len(1500)] 
+# se obtienen las posiciones (filas) del 1 al 1500
+# se limita el dataset a las filas que hay en ind
+tpm_nmf <- tpm_filt_log[ind_nmf, , drop=FALSE]
+dim(tpm_nmf)
+# quedan 1500 genes
+# porqué 1500? porque si, es arbitrario y aprox lo que escogen en el estudio de 
+# referencia
+# evaluación del número de clústeres x algoritmo de brunet
+nmf_rank <- nmfEstimateRank(
+  x      = tpm_nmf,
+  range  = 3:6,
+  method = "brunet",
+  nrun   = 30,
+  seed   = 1234)
+
+plot(nmf_rank)
+nmf_rank$measures
+
+# A partir de los resultados obtenidos lo más importante es:
+# cophenetic = reproductibilidad asignaciones
+# dispersion = grado de consenso a valores puros 0 u 1
+# evar = varianza explicada
+# rss y residuals = errores respecto la matriz original
+# silhouette = separación de los grupos (coef)
+# sparseness = indica cada componente si esta dominado por pocos genes o muestras
+
+consensusmap(nmf_rank$fit[["3"]], labRow = NA, labCol = NA, tracks = NA)
+consensusmap(nmf_rank$fit[["4"]], labRow = NA, labCol = NA, tracks = NA)
+consensusmap(nmf_rank$fit[["5"]], labRow = NA, labCol = NA, tracks = NA)
+consensusmap(nmf_rank$fit[["6"]], labRow = NA, labCol = NA, tracks = NA)
+
+criteria_k <- data.frame(K=nmf_rank[["measures"]][["rank"]], 
+                         Sil.coef = nmf_rank[["measures"]][["silhouette.coef"]],
+                         Sil.con = nmf_rank[["measures"]][["silhouette.consensus"]])
+criteria_k
+
+# viendo las imágenes de los diferentes consensusmaps y por las métricas obtenidas
+# se podría escoger un valor de k = 3, el mismo obtenido mediante consensusclusterplus
+# y criterio pearson + average con n = 5k genes.
+
+
 
 # ------------------------------------------------------------------------------
 # CARACTERIZACIÓN DE LOS CLÚSTERS # --------------------------------------------
 # ------------------------------------------------------------------------------
+
+# Samples most representative of the clusters, hereby called core samples were 
+# identified based on positive silhouette width, indicating higher similarity to 
+# their own class than to any other class member. Core samples were used to select 
+# differentially expressed marker genes for each subtype by comparing the subclass 
+# versus the other subclasses, using Student's t-test.
 
 # buscar los genes diferencialmente más expresados de cada clúster (~10)
 # ahora hay que hacer el análisis de expresión diferencial por cluster
@@ -306,8 +391,7 @@ v <- voom(dge, design)
 # se ajusta el modelo lineal
 fit <- lmFit(v, design)
 # se organizan los contrastes entre clusters, se compara la expresión de cada clúster
-# con la media de expresiones del resto... es una forma pero hay otras, tipo ver
-# genes expresados diferencialmente exclusivos de cada cluster, podria ser interesante?
+# con la media de expresiones del resto... es una forma pero hay otras
 # sintaxis es: diferentes contrastes como un vector + los niveles = matriz de diseño.
 contrasts <- makeContrasts(C1all = C1 - (C2+C3+C4)/3,
                            C2all = C2 - (C1+C3+C4)/3,
@@ -369,11 +453,10 @@ gene_ids <- genes_heatmap_info$gene_id
 # se filtran los 40 genes que nos interesan
 mat_heatmap <- v$E[gene_ids, , drop = FALSE]
 # y se calcula el z-score de cada valor
-mat_z <- mat_heatmap
-
 # básicamente para cada elemento en mat_heatmap se calcula la media y la sd
 # entonces se calcula el z-score de cada valor con la media y la sd y se sustituye
 # en mat_z:
+mat_z <- mat_heatmap
 for (i in 1:nrow(mat_heatmap)) {
   gene_mean <- mean(mat_heatmap[i, ])
   gene_sd <- sd(mat_heatmap[i, ])
@@ -441,9 +524,6 @@ Heatmap(
   column_gap = unit(2, "mm"),
   row_gap = unit(2, "mm")
 )
-
-# Quizás haya que separar en más clústers... parece que 6 podría ser mejor.
-# Revisaré consensus cluster plus - bioconductor y repetiré el analisis
 
 # Posteriormente se realizará un análisis de significación biológica para caracterizar cada clúster.
 # la intención es describir cada gen dentro de cada clúster, encontrar posibles incongruencias.
