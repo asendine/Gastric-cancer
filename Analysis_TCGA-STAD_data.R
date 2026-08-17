@@ -339,21 +339,53 @@ criteria_k <- data.frame(K=nmf_rank[["measures"]][["rank"]],
                          Sil.con = nmf_rank[["measures"]][["silhouette.consensus"]])
 criteria_k
 
-# viendo las imágenes de los diferentes consensusmaps y por las métricas obtenidas
-# se podría escoger un valor de k = 3, el mismo obtenido mediante consensusclusterplus
-# y criterio pearson + average con n = 5k genes.
+# viendo las imágenes de los diferentes consensusmaps y gráficos y por las métricas obtenidas
+# se podría escoger un valor de k = 3 o 6, ya que los valores diana disminuyen en k = 4 y 5.
+# tampoco es que sean valores malos... es difícil, tras hacer diferentes test planteados por GPT,
+# me queda la opción de hacer una consulta a claude para comparar o bien elegir
+# una clusterización según mi criterio científico ya que el criterio numérico/objetivo
+# es muy difuso y no es comparable a los otros métodos de clusterización realizados.
 
-
+# creo que me decanto por hacer k = 6 porque a malas permite hacer una disección
+# más detallada, con mayor resolución. Al final dado que el código es más o menos
+# idéntico en cualquier escenario, siempre se puede cambiar y revisar los resultados.
 
 # ------------------------------------------------------------------------------
 # CARACTERIZACIÓN DE LOS CLÚSTERS # --------------------------------------------
 # ------------------------------------------------------------------------------
-
-# Samples most representative of the clusters, hereby called core samples were 
+# el siguiente paso es encontrar las "core samples", aquellas con anchura de silueta
+# más positiva ~mayor similaridad con su cluster.
+# "Samples most representative of the clusters, hereby called core samples were 
 # identified based on positive silhouette width, indicating higher similarity to 
 # their own class than to any other class member. Core samples were used to select 
 # differentially expressed marker genes for each subtype by comparing the subclass 
-# versus the other subclasses, using Student's t-test.
+# versus the other subclasses, using Student's t-test." La realidad es que usando 
+# cualquier valor de k se han obtenido valores extremadamente buenos de anchura de
+# silueta. Aquí surge otro dilema, plantear un criterio arbitrario para filtrar muestras
+# o dejarlas todas y ya está... no me parece mal en un contexto exploratorio
+# obtener solamente las muestras que más definan un cluster sin pasarnos. El criterio
+# silueta > 0 no discrimina nada, empezaría a ser interesante con sil > 0.6, en el que
+# se eliminarían algunas muestras, quizá un 30%, que ya está bien.
+
+# se obtienen los datos de k = 6
+fit_k <- nmf_rank$fit[["6"]]
+# asignación final basada en la matriz de consenso, se obtienen los clusters
+clusters_k <- predict(fit_k, what = "consensus")
+
+sil_k <- silhouette(fit_k, what = "consensus")
+# se convierte sil_k en data.frame
+sil_table <- data.frame(
+  sample = rownames(sil_k),
+  cluster = factor(sil_k[, "cluster"]),
+  neighboring_cluster = factor(sil_k[, "neighbor"]),
+  silhouette_width = as.numeric(sil_k[, "sil_width"]),
+  row.names = NULL
+)
+
+# hora de escoger las muestras core. Criterio?
+
+
+
 
 # buscar los genes diferencialmente más expresados de cada clúster (~10)
 # ahora hay que hacer el análisis de expresión diferencial por cluster
