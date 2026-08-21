@@ -531,13 +531,11 @@ sample_cluster <- factor(cluster[colnames(mat_z)], levels = c("C1", "C2", "C3", 
 
 # se buscan duplicados y missmatches
 anyDuplicated(genes_heatmap_info$gene_id)
-# hay un duplicado, pero no debería ser problemático
-stopifnot(identical(rownames(mat_z), genes_heatmap_info$gene_id))
 
 # heatmap
 # modificado para obtener los clusters ordenados y añadidos debajo como bloques
 # por colores
-cluster_colors <- c("C1" = "#E64B35","C2" = "#4DBBD5","C3" = "#00A087","C4" = "#F39B7F","C5" = "#3C5488","C6" = "#FFD700")
+cluster_colors <- c("C1" = "#FF0000","C2" = "blue","C3" = "#00FF00","C4" = "#FFFF00","C5" = "#FFA500","C6" = "#A020F0")
 # anotación inferior 1: clústers
 annotation_clusters <- HeatmapAnnotation(
   Cluster = anno_block(
@@ -555,7 +553,7 @@ sum(is.na(posicion))
 molecular_subtype <- cbiopub_clin_sample$MOLECULAR_SUBTYPE[posicion]
 names(molecular_subtype) <- colnames(mat_z)
 head(molecular_subtype)
-subtype_colors <- c("CIN" = "#3C5488", "EBV" = "#00A087", "GS" = "#FFD700", "MSI" = "#E64B35")
+subtype_colors <- c("CIN" = "darkorchid4", "EBV" = "#00A087", "GS" = "#B8860B", "MSI" = "#FF69B4")
 
 # anotación inferior 2: Molecular subtype
 annotation_ms <- HeatmapAnnotation(
@@ -565,11 +563,18 @@ annotation_ms <- HeatmapAnnotation(
     labels_gp = gpar(col = "white",fontface = "bold")),
   Molecular_subtype = molecular_subtype,
   col = list(Molecular_subtype = subtype_colors),
-  na_col = "#D9D9D9",
+  na_col = "white",
   annotation_height = unit(c(6, 4),"mm"),
   show_annotation_name = c(Cluster = FALSE, Molecular_subtype = TRUE),
   which = "column")
 
+# cor Pearson sobre filas
+row_corPearson <- cor(t(mat_z), method = "pearson")
+row_dist_pearson <- as.dist(1 - row_corPearson)
+# se hace el cluster
+row_hcl_p <- hclust(row_dist_pearson, method = "average")
+
+# cluster genes (separacion genes por tipo de cluster)
 Heatmap(
   mat_z,
   name = "Z-score",
@@ -587,14 +592,45 @@ Heatmap(
   row_gap = unit(2, "mm")
 )
 
-# pendiente saber si obtener muestras más características por cluster para a partir
-# de ahí obtener la caracterización de clústers.
+# se busca el vector de clusters según orden de genes
+marker_cluster <- genes_heatmap_info$gene_cluster[match(rownames(mat_z), 
+                                                        genes_heatmap_info$gene_id)]
+marker_cluster <- factor(marker_cluster, levels = paste0("C", 1:6))
+row_annotation <- rowAnnotation(Clusters = marker_cluster, 
+                                col = list(Clusters = c(
+      C1 = "red",
+      C2 = "blue",
+      C3 = "green",
+      C4 = "yellow",
+      C5 = "orange",
+      C6 = "purple")))
+
+# row clustering 1-pearson + average (como se expresan en general)
+Heatmap(
+  mat_z,
+  name = "Z-score",
+  row_labels = genes_heatmap_info$gene_symbol,
+  row_names_gp = gpar(fontsize = 7),
+  column_split = sample_cluster,
+  cluster_row_slices = FALSE,
+  cluster_column_slices = FALSE,
+  cluster_columns = TRUE,
+  cluster_rows = row_hcl_p,
+  row_dend_reorder = FALSE,
+  row_split = NULL,
+  left_annotation = row_annotation,
+  bottom_annotation = annotation_ms,
+  show_column_names = FALSE,
+  column_gap = unit(2, "mm"),
+  row_gap = unit(2, "mm")
+)
 
 # pendiente estudiar el paquete NMF para entenderlo y ver si supone una mejora
-# sobre consensusclusterplus. Estudiar si el método brunet es adecuado 
-# o se debería buscar otro.
+# sobre consensusclusterplus. Estudiar como funciona el metodo brunet.
 
 
 # Posteriormente se realizará un análisis de significación biológica para caracterizar cada clúster.
 # la intención es describir cada gen dentro de cada clúster, encontrar posibles incongruencias.
-# posteriormente buscar biomarcadores e hacer una matriz de muestras x biomarcador (y clúster) y plotearlo?
+# posteriormente buscar biomarcadores y hacer una matriz de muestras x biomarcador (y clúster) y plotearlo?
+
+
