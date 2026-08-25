@@ -625,12 +625,9 @@ Heatmap(
   row_gap = unit(2, "mm")
 )
 
-# pendiente estudiar el paquete NMF para entenderlo y ver si supone una mejora
-# sobre consensusclusterplus. Estudiar como funciona el metodo brunet.
+# pendiente estudiar el paquete NMF para entenderlo. Estudiar como funciona el metodo brunet.
 
 
 # Posteriormente se realizará un análisis de significación biológica para caracterizar cada clúster.
-# la intención es describir cada gen dentro de cada clúster, encontrar posibles incongruencias.
-# posteriormente buscar biomarcadores y hacer una matriz de muestras x biomarcador (y clúster) y plotearlo?
 
 
