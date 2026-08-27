@@ -93,8 +93,8 @@ tpm_filt <- tpm[, colSums(tpm > 0) > 0, drop = FALSE]
 dim(tpm_filt)
 # ahora se debería ver si todas las muestras que hay son de tumor o tejido normal
 # se ve que en los nombres de las columnas, es decir muestras, la posición 14-15
-# indica si es tumor (01) o tejido normal (11)
-tpm_tumor <- tpm_filt[, substr(colnames(tpm_filt), 14, 15) == "01", drop = FALSE]
+# indica si es tumor (01:09) o tejido normal (10:19)
+tpm_tumor <- tpm_filt[, substr(colnames(tpm_filt), 14, 15) %in% sprintf("%02d", 1:9), drop = FALSE]
 dim(tpm_tumor)
 # hay 412 muestras de tumor, se revisa posible duplicados de muestras
 patient_id <- substr(colnames(tpm_tumor), 1, 12)
