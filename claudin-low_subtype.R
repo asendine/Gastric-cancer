@@ -42,10 +42,19 @@ gallo <- gallo %>%
   mutate(MOLECULAR_SUBTYPE = recode
          (MOLECULAR_SUBTYPE, "claudin_low" = "EMT"))
 gallo_final <- read_excel(here("misc", "otros", "2025_Gallo_claudin-low_signature", "10120_2025_1671_MOESM3_ESM.xlsx"))
+gene_info <- as.data.frame(SummarizedExperiment::rowData(rnaseq_se))
+gallo_genes <- read_excel(here("misc", "otros", "2025_Gallo_claudin-low_signature", "10120_2025_1671_MOESM2_ESM.xlsx"))
+
+# Objetivo:
+# Determinar si el subtipo claudin-low definido por la firma de Gallo representa
+# una clase transcriptómica estable e intrínseca de las células tumorales o un 
+# fenotipo continuo condicionado por histología difusa y enriquecimiento estromal.
+
+# Metodología artículo de mama Fougner et al.
 
 # building the annotation table ------------------------------------------------
 tpm <- assay(rnaseq_se, "tpm_unstrand")
-tpm <- tpm[, substr(colnames(tpm), 14, 15) %in% sprintf("%02d", 1:9), drop = FALSE]
+tpm <- tpm[, substr(colnames(tpm), 14, 15) == "01", drop = FALSE]
 dim(tpm)
 class(tpm)
 anyNA(tpm)
@@ -87,3 +96,78 @@ annotation <- annotation %>%
   mutate(
     histology_lauren = na_if(trimws(histology_lauren), ""),
     histology_who    = na_if(trimws(histology_who), ""))
+
+summary(annotation)
+
+# gallo_score
+# seleccionamos primero solo los genes firma de Gallo (158)
+# por si acaso se guarda la firma original
+gallo_signature <- gallo_genes$gene_symbol
+gallo_signature_old <- gallo_signature
+# necesitamos filtrar los simbolos de los 158 genes de Gallo en este vector y
+# aplicarlo en tpm. El problema es que Gallo tiene 18 símbolos nuevos que no constan
+# en gene_info.
+# se busca su símbolo antiguo usando la web https://www.genenames.org/tools/multi-symbol-checker/
+# se encuentran todos excepto LOC100134259 y LOC151174.
+# a través de ncbi se encuentran los dos faltantes y se añaden al archivo para que sea
+# más fácil la correspondencia.
+gene_check <- read.csv2(here("misc", "otros", "2025_Gallo_claudin-low_signature", "hgnc-symbol-check.csv"))
+# en este archivo hay simbolo nuevo vs simbolo antiguo (el que nos interesa)
+# ahora hay que seleccionar los 140 gene symbols de gallo + los 18 restantes
+gene_check_match <- match(gallo_signature_old, gene_check$Input)
+genes_to_update <- !is.na(gene_check_match)
+gallo_signature_old[genes_to_update] <- gene_check$Approved.symbol[gene_check_match[genes_to_update]]
+tpm_gene_symbol <- gene_info$gene_name[match(rownames(tpm), gene_info$gene_id)]
+tpm_df <- data.frame(
+  gene_id = rownames(tpm),
+  gene_symbol = tpm_gene_symbol,
+  tpm,
+  check.names = FALSE)
+tpm_gallo_df <- tpm_df[!is.na(tpm_df$gene_symbol) & 
+                         tpm_df$gene_symbol %in% gallo_signature_old, , drop = FALSE]
+
+dim(tpm_gallo_df)
+setdiff(gallo_signature_old, tpm_gallo_df$gene_symbol)
+anyDuplicated(tpm_gallo_df$gene_symbol)
+
+tpm_gallo_df_log <- log2(tpm_gallo_df + 1)
+tpm_gallo_df_z <- t(scale(t(tpm_gallo_df_log)))
+
+
+# validation gallo_score mayor en 56 muestras claudin low
+
+# calcular stromal, immune scores y pureza
+
+# claudin-low vs EMT no claudin-low x gallo_score
+
+# ...?
+
+# Breast cancer (Fougner):
+# Cogen una lista de 19 genes representing only the pathognomonic gene expression
+# characteristics of claudin-low tumors (manually selected on the basis of published
+# characterizations of claudin-low gene expression features and advances in understanding 
+# the etiological basis of claudin-low tumors).
+
+# hacen un clustering con datos de estos genes y su expresion: Hierarchical clustering 
+# using the reduced gene list was performed by complete linkage with Euclidean 
+# distance as the distance metric. Para identificar el perfil claudin low poniendo 
+# en comun otras variables clínicas/moleculares. We refer to tumors in this cluster
+# as core claudin-low (CoreCL), while claudin-low tumors (as defined by the nine-cell
+# line predictor) outside the CoreCL cluster are referred to as other claudin-low
+# (OtherCL). Individual inspection of gene expression values showed that OtherCL 
+# tumors displayed certain claudin-low characteristics, albeit to a lesser degree 
+# than CoreCL tumors. Thus, our method for identifying claudin-low tumors primarily 
+# differed from the nine-cell line predictor by filtering out a set of basal-like tumors
+# with high levels of stromal and immune infiltration but without pathognomonic 
+# claudin-low gene expression characteristics. 
+
+# The significance of the core claudin-low cluster was evaluated using SigClust.
+
+# It is therefore likely that OtherCL tumors are classified as claudin-low by the
+# nine-cell line predictor due to their stromal infiltration.
+
+# Limitaciones: The nine-cell line claudin-low predictor uses 807 genes, and Prat
+# et al. acknowledge that it may inappropriately identify some tumors as claudin-low 
+# solely due to stromal infiltration. We therefore considered whether a more targeted
+# gene list could be used for claudin-low classification, in order to more accurately
+# isolate features intrinsic to claudin-low tumors.
