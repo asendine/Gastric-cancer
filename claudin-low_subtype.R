@@ -157,7 +157,7 @@ if (any(!is.finite(gene_sd) | gene_sd == 0)) {
 # se obtiene el z-score
 tpm_gallo_z <- t(scale(t(tpm_gallo_log)))
 stopifnot(!anyNA(tpm_gallo_z), all(is.finite(tpm_gallo_z)))
-
+# se crea la puntuación de Gallo
 gallo_score <- apply(tpm_gallo_z, 2, median)
 # se incorpora la puntuación a annotation sabiendo que los nombres de muestra de
 # tpm y rna_aliquot_id son iguales
@@ -217,6 +217,9 @@ pROC::auc(roc_gallo)
 # genes validadores externos de la firma -> obtenidos en Gallo como genes muy 
 # relacionados con claudin-low
 marker_genes <- c("CLDN3", "CLDN4", "CLDN7", "CDH1", "VIM")
+# se comprueba que ninguno de los genes de la firma se encuentra entre los 
+# markers
+intersect(marker_genes, gallo_signature_old)
 # se evalua la correlación entre el gallo_score y la expresión de estos genes
 # se obtienen los valores de expresión de solamente los genes marcadores
 marker_tpm_df <- tpm_df[tpm_df$gene_symbol %in% marker_genes, , drop = FALSE]
@@ -312,7 +315,70 @@ marker_group_results
 # si median difference negativo indica una menor expresión en claudin-low.
 # si median difference positivo indica una mayor expresión en claudin-low.
 
+# ******************************************************************************
+# Visual of results
+# ******************************************************************************
+# Gallo_score distribution between claudin-low vs no-low groups
+score_plot_df <- validation_df
+score_plot_df$group <- factor(score_plot_df$claudin_low_gallo,
+                              levels = c(FALSE, TRUE),
+                              labels = c("No claudin-low", "Claudin-low"))
+group_n <- table(score_plot_df$group)
+# etiqueta grupos claudin
+group_labels <- c(
+  "No claudin-low" = paste0("No claudin-low\n(n = ", group_n["No claudin-low"], ")"),
+  "Claudin-low" = paste0("Claudin-low\n(n = ", group_n["Claudin-low"], ")"))
 
+wilcox_gallo <- wilcox.test(gallo_score ~ claudin_low_gallo, 
+                            data = validation_df, exact = FALSE)
+# etiqueta test wilcoxon
+p_wilcox_label <- paste0("Wilcoxon: p ", format.pval(wilcox_gallo$p.value, digits = 2))
+
+# anotación vertical
+y_annotation <- max(score_plot_df$gallo_score, na.rm = TRUE) + 0.25
+plot_gallo_score <- ggplot(score_plot_df, aes(x = group, y = gallo_score, fill = group)) +
+  geom_violin(width = 0.75, trim = FALSE, alpha = 0.45, colour = NA) +
+  geom_boxplot(width = 0.16, outlier.shape = NA, alpha = 0.8) +
+  geom_jitter(width = 0.08, size = 0.8, alpha = 0.30) +
+  annotate("text", x = 1.5, y = y_annotation, label = p_wilcox_label, size = 3.8) +
+  scale_x_discrete(labels = group_labels) + 
+  scale_fill_manual(values = c("No claudin-low" = "#A7A9AC", "Claudin-low" = "#D55E00")) +
+  scale_y_continuous(expand = expansion(mult = c(0.05, 0.15))) +
+  labs(x = NULL, y = "Gallo score (mediana de z-scores)", 
+       title = "Distribución del Gallo score") +
+  theme_classic(base_size = 12) +
+  theme(legend.position = "none", plot.title = element_text(face = "bold"))
+
+plot_gallo_score
+
+# Marker genes expression in claudin-low vs non-low groups
+marker_plot_df <- data.frame(gene = factor(
+  rep(marker_genes, each = nrow(marker_group_df)), levels = marker_genes),
+  expression = unlist(marker_group_df[marker_genes], use.names = FALSE),
+  group = rep(marker_group_df$claudin_low_gallo, times = length(marker_genes)))
+
+marker_plot_df$group <- factor(marker_plot_df$group, levels = c(FALSE, TRUE),
+                               labels = c("No claudin-low", "Claudin-low"))
+
+fdr_text <- ifelse(marker_group_results$FDR == 0, "FDR < 2.2e-16",
+                   paste0("FDR = ", formatC(marker_group_results$FDR, format = "e", digits = 1)))
+
+facet_labels <- setNames(paste0(marker_group_results$gene, "\n", fdr_text), 
+                         marker_group_results$gene)
+
+plot_markers <- ggplot(marker_plot_df, aes(x = group, y = expression, fill = group)) +
+  geom_boxplot(width = 0.60, outlier.shape = NA, alpha = 0.8) +
+  geom_jitter(width = 0.12, size = 0.65, alpha = 0.20) +
+  facet_wrap(~ gene, nrow = 1, labeller = as_labeller(facet_labels)) +
+  scale_fill_manual(values = c("No claudin-low" = "#A7A9AC", "Claudin-low" = "#D55E00")) +
+  labs(x = NULL, y = expression(log[2](TPM + 1)), 
+       title = "Expresión de marcadores del fenotipo claudin-low") +
+  theme_classic(base_size = 11) + 
+  theme(legend.position = "none", plot.title = element_text(face = "bold"), 
+        strip.background = element_blank(), strip.text = element_text(face = "bold"), 
+        axis.text.x = element_text(angle = 35, hjust = 1))
+
+plot_markers
 
 # calcular stromal, immune scores y pureza
 
