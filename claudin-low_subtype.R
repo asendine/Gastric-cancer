@@ -38,32 +38,36 @@ cbiopub_clin_pat <- read.delim(file.path(pub_stad_dir, "data_clinical_patient.tx
 clinical_tcga <- readRDS(file.path(tcga_dir, "Prepared", "TCGA_STAD_clinical.rds"))
 rnaseq_se <- readRDS(file.path(tcga_dir, "Prepared", "TCGA_STAD_rnaseq_se.rds"))
 gallo <- read_excel(here("misc", "otros", "2025_Gallo_claudin-low_signature", "10120_2025_1671_MOESM3_ESM.xlsx"))
-gallo <- gallo %>%
-  mutate(MOLECULAR_SUBTYPE = recode
-         (MOLECULAR_SUBTYPE, "claudin_low" = "EMT"))
-gallo_final <- read_excel(here("misc", "otros", "2025_Gallo_claudin-low_signature", "10120_2025_1671_MOESM3_ESM.xlsx"))
+gallo_parent <- gallo %>%
+  mutate(MOLECULAR_SUBTYPE = recode(MOLECULAR_SUBTYPE, "claudin_low" = "EMT"))
 gene_info <- as.data.frame(SummarizedExperiment::rowData(rnaseq_se))
 gallo_genes <- read_excel(here("misc", "otros", "2025_Gallo_claudin-low_signature", "10120_2025_1671_MOESM2_ESM.xlsx"))
 
+# ******************************************************************************
 # Objetivo:
 # Determinar si el subtipo claudin-low definido por la firma de Gallo representa
 # una clase transcriptómica estable e intrínseca de las células tumorales o un 
 # fenotipo continuo condicionado por histología difusa y enriquecimiento estromal.
 
 # Metodología artículo de mama Fougner et al.
-
-# building the annotation table ------------------------------------------------
+# ******************************************************************************
+# building the annotation table
+# ******************************************************************************
 tpm <- assay(rnaseq_se, "tpm_unstrand")
 tpm <- tpm[, substr(colnames(tpm), 14, 15) == "01", drop = FALSE]
 dim(tpm)
 class(tpm)
 anyNA(tpm)
 
-gallo_match <- match(
+# match clasificación gallo
+gallo_match <- match( 
   substr(colnames(tpm), 1, 15), substr((gallo$rna_aliquot_id), 1, 15))
+# match clasificación ACRG
+gallo_parent_match <- match( 
+  substr(colnames(tpm), 1, 15), substr((gallo_parent$rna_aliquot_id), 1, 15))
 
-gallo_final_match <- match(
-  substr(colnames(tpm), 1, 15),substr((gallo_final$rna_aliquot_id), 1, 15))
+acrg_subtype <- gallo_parent$MOLECULAR_SUBTYPE[gallo_parent_match]
+gallo_subtype <- gallo$MOLECULAR_SUBTYPE[gallo_match]
 
 annotation <- data.frame(
   rna_aliquot_id = colnames(tpm),
@@ -71,10 +75,9 @@ annotation <- data.frame(
   patient_id = substr(colnames(tpm), 1, 12),
   tcga_subtype_original = cbiopub_clin_sample$MOLECULAR_SUBTYPE[
     match(substr(colnames(tpm), 1, 15), cbiopub_clin_sample$SAMPLE_ID)],
-  acrg_subtype_deepcc = gallo$MOLECULAR_SUBTYPE[gallo_match],
-  acrg_parent_subtype = gallo$MOLECULAR_SUBTYPE[gallo_match],
-  claudin_low_gallo = gallo_final$MOLECULAR_SUBTYPE[gallo_final_match] == "claudin_low",
-  gallo_final_subtype = gallo_final$MOLECULAR_SUBTYPE[gallo_final_match],
+  acrg_parent_subtype = acrg_subtype,
+  claudin_low_gallo = gallo_subtype == "claudin_low",
+  gallo_subtype = gallo_subtype,
   histology_lauren = cbiopub_clin_pat$LAUREN_CLASS[
     match(substr(colnames(tpm), 1, 12), cbiopub_clin_pat$PATIENT_ID)],
   histology_who = cbiopub_clin_pat$WHO_CLASS[match(
@@ -83,14 +86,14 @@ annotation <- data.frame(
 dim(annotation)
 
 table(annotation$tcga_subtype_original, useNA = "ifany")
-table(annotation$acrg_subtype_deepcc, useNA = "ifany")
-table(annotation$gallo_final_subtype, useNA = "ifany")
+table(annotation$acrg_parent_subtype, useNA = "ifany")
+table(annotation$gallo_subtype, useNA = "ifany")
 table(annotation$claudin_low_gallo, useNA = "ifany")
 table(annotation$histology_lauren, useNA = "ifany")
 table(annotation$histology_who, useNA = "ifany")
 
-anyDuplicated(annotation$sample_id)
-identical(annotation$rna_aliquot_id, colnames(tpm))
+stopifnot(anyDuplicated(annotation$sample_id) == 0L, 
+          identical(annotation$rna_aliquot_id, colnames(tpm)))
 
 annotation <- annotation %>%
   mutate(
@@ -99,7 +102,9 @@ annotation <- annotation %>%
 
 summary(annotation)
 
-# gallo_score
+# ******************************************************************************
+# gallo_score into annotation
+# ******************************************************************************
 # seleccionamos primero solo los genes firma de Gallo (158)
 # por si acaso se guarda la firma original
 gallo_signature <- gallo_genes$gene_symbol
@@ -117,11 +122,11 @@ gene_check <- read.csv2(here("misc", "otros", "2025_Gallo_claudin-low_signature"
 # se obtienen los genes a actualizar de gene_signature old
 gene_check_match <- match(gallo_signature_old, gene_check$Input)
 genes_to_update <- !is.na(gene_check_match)
-# los genes a actualizar de gallo_signature_old se reemplazan por los antiguos
+# los genes a cambiar de gallo_signature_old se reemplazan por los antiguos
 # que existen en gene_info
 gallo_signature_old[genes_to_update] <- gene_check$Approved.symbol[
   gene_check_match[genes_to_update]]
-# se obtienen los símboloes de los genes de las filas de tpm
+# se obtienen los símbolos de los genes de las filas de tpm
 tpm_gene_symbol <- gene_info$gene_name[match(rownames(tpm), gene_info$gene_id)]
 # se construye el df
 tpm_df <- data.frame(
@@ -138,15 +143,21 @@ setdiff(gallo_signature_old, tpm_gallo$gene_symbol)
 anyDuplicated(tpm_gallo$gene_symbol)
 
 rownames(tpm_gallo) <- tpm_gallo$gene_symbol
-tpm_gallo <- as.matrix(tpm_gallo_df[ , 
-                                     !colnames(tpm_gallo_df) %in% 
+tpm_gallo <- as.matrix(tpm_gallo[ , 
+                                     !colnames(tpm_gallo) %in% 
                                        c("gene_id", "gene_symbol"), drop = FALSE])
 anyNA(tpm_gallo)
 anyDuplicated(rownames(tpm_gallo))
 # se transforma
 tpm_gallo_log <- log2(tpm_gallo + 1)
+gene_sd <- apply(tpm_gallo_log, 1, sd)
+if (any(!is.finite(gene_sd) | gene_sd == 0)) {
+  stop("Hay genes de la firma sin variabilidad entre muestras.")}
+
 # se obtiene el z-score
 tpm_gallo_z <- t(scale(t(tpm_gallo_log)))
+stopifnot(!anyNA(tpm_gallo_z), all(is.finite(tpm_gallo_z)))
+
 gallo_score <- apply(tpm_gallo_z, 2, median)
 # se incorpora la puntuación a annotation sabiendo que los nombres de muestra de
 # tpm y rna_aliquot_id son iguales
@@ -154,33 +165,36 @@ annotation$gallo_score <- gallo_score[match(annotation$rna_aliquot_id, names(gal
 # se usa la mediana porque es lo que hacen en Londero/Gallo, la media podría ser
 # una opción pero lo que buscamos es el valor típico más que el valor promedio
 
-# validation gallo_score mayor en 56 muestras claudin low
-# recogemos los valores de claudin_low_gallo dentro de annotation que NO son NA
+# ******************************************************************************
+# VALIDATION gallo_score
+# ******************************************************************************
+# gallo_score en grupos claudin-low/no-low diferencias entre grupos
+# usando agregate + wilcoxon
+# ******************************************************************************
+
+# se construye un df sin las muestras NA en claudin_low_gallo
 validation_df <- annotation[!is.na(annotation$claudin_low_gallo), ]
 # quedan fuera 16 muestras
 aggregate(gallo_score ~ claudin_low_gallo, # cuanto difieren los grupos? resume 
           data = validation_df,            # gallo_score según grupos de claudin_low_gallo
           FUN = function(x) {              
-            c(
-              n = length(x),
+            c(n = length(x),
               median = median(x),
-              IQR = IQR(x)
-            )
-            }
-          )
+              IQR = IQR(x))
+            })
 
 # son las diferencias entre los grupos claudin-low y no low significativas?
 # wilcoxon para comparar distribuciones de gallo_score de los dos grupos sin 
 # depender de que siga una dist normal y teniendo grupos independientes
-wilcox.test(
-  gallo_score ~ claudin_low_gallo,
-  data = validation_df,
-  exact = FALSE
-)
+wilcox.test(gallo_score ~ claudin_low_gallo, data = validation_df,  exact = FALSE)
 
 # se confirma que el score obtenido es claramente superior en las muestras 
 # claudin-low
 
+# ******************************************************************************
+# AUC: dado un gallo_score, qué tan bien se identificaría correctamente en 
+# claudin-low o no-low
+# ******************************************************************************
 # se calcula el AUC
 roc_gallo <- pROC::roc(
   response = validation_df$claudin_low_gallo,
@@ -189,7 +203,6 @@ roc_gallo <- pROC::roc(
   direction = "<",
   quiet = TRUE
 )
-
 pROC::auc(roc_gallo)
 # sensibilidad: claudin-low correctamente identificadas
 # especificidad: no claudin-low correctamente identificadas
@@ -198,6 +211,9 @@ pROC::auc(roc_gallo)
 # "<" indica que el gallo_score de FALSE (grupo control) debe ser menor que el
 # gallo_score de TRUE (grupo claudin-low) para que la predicción sea correcta.
 
+# ******************************************************************************
+# Marker genes 1: correlation entre genes marker y gallo_score
+# ******************************************************************************
 # genes validadores externos de la firma -> obtenidos en Gallo como genes muy 
 # relacionados con claudin-low
 marker_genes <- c("CLDN3", "CLDN4", "CLDN7", "CDH1", "VIM")
@@ -217,15 +233,85 @@ marker_correlations <- data.frame(gene = marker_genes, rho = NA_real_,
                                   p_value = NA_real_)
 for (i in seq_along(marker_genes)) {
   gene <- marker_genes[i]
+  # se esta evaluando el primer valor de annotation (gallo_score del gen 1) con 
+  # el primer valor del gen 1 de marker_log porque justo ese valor sera el gen 1,
+  # las columnas siguen el mismo orden que las filas de annotation.
   correlation_test <- cor.test(annotation$gallo_score, marker_log[gene, ], 
                                method = "spearman", exact = FALSE)
+  # guarda el número limpio:
   marker_correlations$rho[i] <- unname(correlation_test$estimate)
   marker_correlations$p_value[i] <- correlation_test$p.value
 }
 marker_correlations$FDR <- p.adjust(marker_correlations$p_value, method = "BH")
 marker_correlations
+# rho: es la correlacion de spearman que evalua la fuerza y dirección de la 
+# relación entre dos variables.
+# pearson -> relacion lineal
+# spearman -> relacion monotona (no necesariamente lineal)
+# kendall -> no se usa normalmente en transcriptómica
+# BH -> Benjamini-Hochberg corrección que evita obtener falsos positivos (FDR) 
+# entre los resultados significativos cuando estos son muchos y pueden ser por 
+# azar. Bonferroni aplica una corrección mucho más ajustada y puede eliminar 
+# resultados buenos.
 
-# se compara la expresión de estos genes marcadores entre caludin-low y no-low
+# ******************************************************************************
+# Marker genes 2: comparison between claudin-low and non-low
+# comparación expresión entre genes marker vs claudin-low y no-low.
+# ******************************************************************************
+# tpm_log de cada gen marcador vs 56 muestras claudin-low y el tpm_log de cada 
+# gen marcador con las 340 muestras no-low usando Wilcoxon.
+sample_match <- match(annotation$rna_aliquot_id, colnames(marker_log))
+marker_group_df <- data.frame(rna_aliquot_id = annotation$rna_aliquot_id,
+                              claudin_low_gallo = annotation$claudin_low_gallo,
+                              t(marker_log[, sample_match, drop = FALSE]),
+                              check.names = FALSE)
+# se eliminan los NAs
+marker_group_df <- marker_group_df[!is.na(marker_group_df$claudin_low_gallo), 
+                                   , drop = FALSE]
+dim(marker_group_df)
+
+# se construye una tabla con los resultados
+marker_group_results <- data.frame(
+  gene = marker_genes,
+  median_non_low = NA_real_,
+  IQR_non_low = NA_real_,
+  median_claudin_low = NA_real_,
+  IQR_claudin_low = NA_real_,
+  median_difference = NA_real_,
+  p_value = NA_real_)
+
+# comparación de cada gen vs fenotipo 
+for (i in seq_along(marker_genes)) {
+  
+  gene <- marker_genes[i]
+
+  expression_non_low <- marker_group_df[[gene]][
+    marker_group_df$claudin_low_gallo == FALSE]
+  expression_claudin_low <- marker_group_df[[gene]][
+    marker_group_df$claudin_low_gallo == TRUE]
+  
+  marker_group_results$median_non_low[i] <- median(expression_non_low)
+  marker_group_results$IQR_non_low[i] <- IQR(expression_non_low)
+  
+  marker_group_results$median_claudin_low[i] <- median(expression_claudin_low)
+  marker_group_results$IQR_claudin_low[i] <- IQR(expression_claudin_low)
+  
+  marker_group_results$median_difference[i] <- median(expression_claudin_low) - 
+    median(expression_non_low)
+  
+  comparison_test <- wilcox.test(x = expression_claudin_low, 
+                                 y = expression_non_low,
+                                 alternative = "two.sided", exact = FALSE)
+  
+  marker_group_results$p_value[i] <- comparison_test$p.value
+}
+
+marker_group_results$FDR <- p.adjust(marker_group_results$p_value, method = "BH")
+marker_group_results
+
+# si median difference negativo indica una menor expresión en claudin-low.
+# si median difference positivo indica una mayor expresión en claudin-low.
+
 
 
 # calcular stromal, immune scores y pureza
@@ -233,6 +319,13 @@ marker_correlations
 # claudin-low vs EMT no claudin-low x gallo_score
 
 # ...?
+
+
+
+
+
+
+
 
 # Breast cancer (Fougner):
 # Cogen una lista de 19 genes representing only the pathognomonic gene expression
