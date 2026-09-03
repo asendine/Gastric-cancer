@@ -166,7 +166,7 @@ annotation$gallo_score <- gallo_score[match(annotation$rna_aliquot_id, names(gal
 # una opción pero lo que buscamos es el valor típico más que el valor promedio
 
 # ******************************************************************************
-# VALIDATION gallo_score
+# Checks gallo_score
 # ******************************************************************************
 # gallo_score en grupos claudin-low/no-low diferencias entre grupos
 # usando agregate + wilcoxon
@@ -214,7 +214,7 @@ pROC::auc(roc_gallo)
 # ******************************************************************************
 # Marker genes 1: correlation entre genes marker y gallo_score
 # ******************************************************************************
-# genes validadores externos de la firma -> obtenidos en Gallo como genes muy 
+# genes check de la firma -> obtenidos en Gallo como genes muy 
 # relacionados con claudin-low
 marker_genes <- c("CLDN3", "CLDN4", "CLDN7", "CDH1", "VIM")
 # se comprueba que ninguno de los genes de la firma se encuentra entre los 
