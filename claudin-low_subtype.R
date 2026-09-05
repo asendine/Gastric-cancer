@@ -22,7 +22,8 @@ for (pkg in packages) {
 libraries <- c("cBioPortalData", "TCGAbiolinks", "SummarizedExperiment", "dplyr",
                "ComplexHeatmap", "data.table", "dataframeexplorer", "devtools", 
                "cluster", "edgeR", 'limma', 'grid', 'ggplot2', 'PCAtools', 
-               'ConsensusClusterPlus', 'NMF', 'readxl', 'here', 'pROC')
+               'ConsensusClusterPlus', 'NMF', 'readxl', 'here', 'pROC',
+               'tidyestimate', 'tidyr')
 for (i in libraries) {
   library(i, character.only = TRUE)
 }
@@ -57,7 +58,12 @@ tpm <- assay(rnaseq_se, "tpm_unstrand")
 tpm <- tpm[, substr(colnames(tpm), 14, 15) == "01", drop = FALSE]
 dim(tpm)
 class(tpm)
-anyNA(tpm)
+if (anyNA(tpm) || any(!is.finite(tpm))) {
+  stop("tpm contiene valores NA, NaN o infinitos.")}
+if (anyDuplicated(rownames(tpm))) {
+  stop("Los gene_id de tpm no son únicos.")}
+if (any(tpm < 0)) {stop("Los valores TPM no pueden ser negativos.")}
+
 
 # match clasificación gallo
 gallo_match <- match( 
@@ -122,32 +128,32 @@ gene_check <- read.csv2(here("misc", "otros", "2025_Gallo_claudin-low_signature"
 # se obtienen los genes a actualizar de gene_signature old
 gene_check_match <- match(gallo_signature_old, gene_check$Input)
 genes_to_update <- !is.na(gene_check_match)
-# los genes a cambiar de gallo_signature_old se reemplazan por los antiguos
-# que existen en gene_info
+# los genes a cambiar de gallo_signature_old (genes_to_update) se reemplazan por 
+# los antiguos que existen en gene_info (gene_check$Approved.symbol)
 gallo_signature_old[genes_to_update] <- gene_check$Approved.symbol[
   gene_check_match[genes_to_update]]
 # se obtienen los símbolos de los genes de las filas de tpm
 tpm_gene_symbol <- gene_info$gene_name[match(rownames(tpm), gene_info$gene_id)]
+
 # se construye el df
 tpm_df <- data.frame(
   gene_id = rownames(tpm),
   gene_symbol = tpm_gene_symbol,
   tpm,
   check.names = FALSE)
+
+if (anyDuplicated(tpm_df$gene_id)) {stop("tpm_df contiene gene_id duplicados.")}
+
 # se filtra por la firma de Gallo
 tpm_gallo <- tpm_df[!is.na(tpm_df$gene_symbol) & 
                          tpm_df$gene_symbol %in% gallo_signature_old, , drop = FALSE]
 
 dim(tpm_gallo)
-setdiff(gallo_signature_old, tpm_gallo$gene_symbol)
-anyDuplicated(tpm_gallo$gene_symbol)
 
 rownames(tpm_gallo) <- tpm_gallo$gene_symbol
 tpm_gallo <- as.matrix(tpm_gallo[ , 
                                      !colnames(tpm_gallo) %in% 
                                        c("gene_id", "gene_symbol"), drop = FALSE])
-anyNA(tpm_gallo)
-anyDuplicated(rownames(tpm_gallo))
 # se transforma
 tpm_gallo_log <- log2(tpm_gallo + 1)
 gene_sd <- apply(tpm_gallo_log, 1, sd)
@@ -171,7 +177,6 @@ annotation$gallo_score <- gallo_score[match(annotation$rna_aliquot_id, names(gal
 # gallo_score en grupos claudin-low/no-low diferencias entre grupos
 # usando agregate + wilcoxon
 # ******************************************************************************
-
 # se construye un df sin las muestras NA en claudin_low_gallo
 validation_df <- annotation[!is.na(annotation$claudin_low_gallo), ]
 # quedan fuera 16 muestras
@@ -214,8 +219,8 @@ pROC::auc(roc_gallo)
 # ******************************************************************************
 # Marker genes 1: correlation entre genes marker y gallo_score
 # ******************************************************************************
-# genes check de la firma -> obtenidos en Gallo como genes muy 
-# relacionados con claudin-low
+# genes check de la firma -> obtenidos en Gallo como genes muy relacionados con 
+# claudin-low
 marker_genes <- c("CLDN3", "CLDN4", "CLDN7", "CDH1", "VIM")
 # se comprueba que ninguno de los genes de la firma se encuentra entre los 
 # markers
@@ -237,8 +242,8 @@ marker_correlations <- data.frame(gene = marker_genes, rho = NA_real_,
 for (i in seq_along(marker_genes)) {
   gene <- marker_genes[i]
   # se esta evaluando el primer valor de annotation (gallo_score del gen 1) con 
-  # el primer valor del gen 1 de marker_log porque justo ese valor sera el gen 1,
-  # las columnas siguen el mismo orden que las filas de annotation.
+  # el primer valor del gen 1 de marker_log porque las columnas siguen el mismo 
+  # orden que las filas de annotation.
   correlation_test <- cor.test(annotation$gallo_score, marker_log[gene, ], 
                                method = "spearman", exact = FALSE)
   # guarda el número limpio:
@@ -380,16 +385,112 @@ plot_markers <- ggplot(marker_plot_df, aes(x = group, y = expression, fill = gro
 
 plot_markers
 
-# calcular stromal, immune scores y pureza
+# ******************************************************************************
+# how much does the claudin-low signal track sample composition?
+# ******************************************************************************
+# calcular stromal, immune scores y pureza mediante TIDYESTIMATE
+# para ello es necesario un df con los datos de expresion en log2(TPM+1), los id
+# de muestras y o bien el entrez id o el gene symbol. Tidyestimate no acepta enseml.
 
-# claudin-low vs EMT no claudin-low x gallo_score
+stopifnot(is.matrix(tpm), is.numeric(tpm), all(c("gene_id", "gene_symbol") %in% 
+                                                 colnames(tpm_df)))
+# posiciones
+gene_position <- match(rownames(tpm), tpm_df$gene_id)
+if (anyNA(gene_position)) {
+  missing_gene_ids <- rownames(tpm)[is.na(gene_position)]
+  stop("No se han encontrado en tpm_df ", length(missing_gene_ids),
+       " gene_id. Registros: ", paste(head(missing_gene_ids, 10), collapse = ", "))}
+# gene map
+gene_map <- tpm_df[gene_position, c("gene_id", "gene_symbol"), drop = FALSE]
+gene_map$gene_id <- as.character(gene_map$gene_id)
+gene_map$gene_symbol <- trimws(as.character(gene_map$gene_symbol))
+
+duplicate_counts <- table(gene_map$gene_symbol)
+if ((sum(duplicate_counts > 1)) >= 1) {
+  stop("Hay ", (sum(duplicate_counts > 1)), " símbolos duplicados almenos 1 vez")
+}
+
+# corrección duplicados
+valid_symbol <- (!is.na(gene_map$gene_symbol) & nzchar(gene_map$gene_symbol))
+# se cogen los datos de tpm por simbolos que cumplen las condiciones normales y
+# se suman las rows que tengan símbolos iguales manteniendo 1 símbolo
+tpm_symbol <- rowsum(tpm[valid_symbol, , drop = FALSE],
+  group = gene_map$gene_symbol[valid_symbol])
+
+stopifnot(!anyDuplicated(rownames(tpm_symbol)), identical(colnames(tpm_symbol), colnames(tpm)))
+stopifnot(nrow(tpm_symbol) == length(unique(gene_map$gene_symbol)))
+tpm_log <- log2(tpm_symbol + 1)
+
+# obtención de scores
+tpm_estimate <- tpm_log |>
+  filter_common_genes(id = "hgnc_symbol", tidy = FALSE, tell_missing = TRUE, 
+                      find_alias = FALSE)
+scores <- tpm_estimate |>
+  estimate_score(is_affymetrix = FALSE)
+
+# inserción en annotation
+score_position <- match(annotation$rna_aliquot_id, scores$sample)
+stopifnot(!anyNA(score_position))
+
+annotation$stromal_score <- scores$stromal[score_position]
+annotation$immune_score <- scores$immune[score_position]
+annotation$estimate_score <- scores$estimate[score_position]
+
+# cor Spearman gallo_score vs stromal/immune/estimate scores
+score_names <- c("stromal_score", "immune_score", "estimate_score")
+scores_long <- annotation |>
+  select(gallo_score, all_of(score_names)) |> # selecciona las 4 columnas
+  pivot_longer(cols = all_of(score_names), # pivot longer las pone una bajo la otra
+               # y genera 2 columnas asociadas a los nombres y valores
+               names_to = "score",
+               values_to = "value") |>
+  filter(is.finite(gallo_score), is.finite(value)) |>
+  mutate(score = factor(score, levels = score_names))
+
+score_correlations <- lapply(score_names, function(score_name) {
+  df <- filter(scores_long, score == score_name) # se hace un df del panel
+  # se calcula cor spearman de la pareja del panel
+  test <- cor.test(df$gallo_score, df$value, method = "spearman", exact = FALSE)
+  data.frame(score = score_name, n = nrow(df), rho = unname(test$estimate), 
+             p_value = test$p.value)}) |>
+  bind_rows() |>
+  mutate(FDR = p.adjust(p_value, method = "BH"))
+score_correlations
+
+# se hacen las etiquetas con un df nuevo basado en score_correlations al que se
+# le añade labels
+plot_labels <- score_correlations |>
+  mutate(label = paste0("n = ", n, "\nrho = ", round(rho, 3), 
+                        "\nFDR ", format.pval(FDR, digits = 2)))
+
+ggplot(scores_long, aes(x = gallo_score, y = value)) + # variables de los ejes
+  geom_point(alpha = 0.4, size = 1.3) + # 1 punto por muestra
+  # se añade una curva de tendencia
+  geom_smooth(method = "loess", formula = y ~ x, se = FALSE, colour = "#2166AC") +
+  # se crean los paneles por separado en 1 fila
+  facet_wrap(~ score, scales = "free_y", nrow = 1) +
+  geom_text(data = plot_labels, aes(x = -Inf, y = Inf, label = label),
+            inherit.aes = FALSE, hjust = -0.1, vjust = 1.1, size = 3.5) +
+  labs(x = "Gallo score", y = "ESTIMATE-derived score") +
+  theme_classic(base_size = 12)
+
+# 2. Comparación claudin-low frente a non-low 
+# Compararía cada score mediante Wilcoxon–Mann–Whitney bilateral para muestras independientes.
+
+
+
+# 3. Ajuste e interpretación
+# Aplicaría Benjamini–Hochberg por separado a las dos familias de preguntas: 
+# los tres p-valores de correlación y los tres de comparación entre grupos. 
+# Así quedarían seis pruebas, organizadas en dos bloques predefinidos.
 
 # ...?
 
 
-
-
-
+# testers
+stopifnot(identical(colnames(counts), names(clusters)))
+if (any(!is.finite(gene_sd) | gene_sd == 0)) {
+  stop("Hay genes de la firma sin variabilidad entre muestras.")}
 
 
 
