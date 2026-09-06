@@ -50,9 +50,8 @@ gallo_genes <- read_excel(here("misc", "otros", "2025_Gallo_claudin-low_signatur
 # una clase transcriptómica estable e intrínseca de las células tumorales o un 
 # fenotipo continuo condicionado por histología difusa y enriquecimiento estromal.
 
-# Metodología artículo de mama Fougner et al.
 # ******************************************************************************
-# building the annotation table
+# ANNOTATION
 # ******************************************************************************
 tpm <- assay(rnaseq_se, "tpm_unstrand")
 tpm <- tpm[, substr(colnames(tpm), 14, 15) == "01", drop = FALSE]
@@ -109,7 +108,7 @@ annotation <- annotation %>%
 summary(annotation)
 
 # ******************************************************************************
-# gallo_score into annotation
+# GALLO_SCORE EN ANNOTATION
 # ******************************************************************************
 # seleccionamos primero solo los genes firma de Gallo (158)
 # por si acaso se guarda la firma original
@@ -172,7 +171,7 @@ annotation$gallo_score <- gallo_score[match(annotation$rna_aliquot_id, names(gal
 # una opción pero lo que buscamos es el valor típico más que el valor promedio
 
 # ******************************************************************************
-# Checks gallo_score
+# GALLO_SCORE VS CLAUDIN LOW/NO-LOW
 # ******************************************************************************
 # gallo_score en grupos claudin-low/no-low diferencias entre grupos
 # usando agregate + wilcoxon
@@ -217,7 +216,7 @@ pROC::auc(roc_gallo)
 # gallo_score de TRUE (grupo claudin-low) para que la predicción sea correcta.
 
 # ******************************************************************************
-# Marker genes 1: correlation entre genes marker y gallo_score
+# GENES MARCADORES: EXPRESIÓN VS GALLO_SCORE
 # ******************************************************************************
 # genes check de la firma -> obtenidos en Gallo como genes muy relacionados con 
 # claudin-low
@@ -263,8 +262,7 @@ marker_correlations
 # resultados buenos.
 
 # ******************************************************************************
-# Marker genes 2: comparison between claudin-low and non-low
-# comparación expresión entre genes marker vs claudin-low y no-low.
+# GENES MARCADORES: CLAUDIN LOW VS NO-LOW
 # ******************************************************************************
 # tpm_log de cada gen marcador vs 56 muestras claudin-low y el tpm_log de cada 
 # gen marcador con las 340 muestras no-low usando Wilcoxon.
@@ -321,7 +319,7 @@ marker_group_results
 # si median difference positivo indica una mayor expresión en claudin-low.
 
 # ******************************************************************************
-# Visual of results
+# GRÁFICOS
 # ******************************************************************************
 # Gallo_score distribution between claudin-low vs no-low groups
 score_plot_df <- validation_df
@@ -386,7 +384,7 @@ plot_markers <- ggplot(marker_plot_df, aes(x = group, y = expression, fill = gro
 plot_markers
 
 # ******************************************************************************
-# how much does the claudin-low signal track sample composition?
+# SAMPLE COMPOSITION (ENVIRONTMENT) ANALYSIS
 # ******************************************************************************
 # calcular stromal, immune scores y pureza mediante TIDYESTIMATE
 # para ello es necesario un df con los datos de expresion en log2(TPM+1), los id
@@ -455,6 +453,7 @@ score_correlations <- lapply(score_names, function(score_name) {
              p_value = test$p.value)}) |>
   bind_rows() |>
   mutate(FDR = p.adjust(p_value, method = "BH"))
+
 score_correlations
 
 # se hacen las etiquetas con un df nuevo basado en score_correlations al que se
@@ -475,51 +474,70 @@ ggplot(scores_long, aes(x = gallo_score, y = value)) + # variables de los ejes
   theme_classic(base_size = 12)
 
 # 2. Comparación claudin-low frente a non-low 
-# Compararía cada score mediante Wilcoxon–Mann–Whitney bilateral para muestras independientes.
+# Compararía cada score mediante Wilcoxon–Mann–Whitney bilateral para muestras 
+# independientes.
+# de forma muy similar al anterior analisis
+env_long <- annotation |>
+  select(rna_aliquot_id, claudin_low_gallo, all_of(score_names)) |>
+  filter(!is.na(claudin_low_gallo)) |>
+  pivot_longer(cols = all_of(score_names), names_to = "score", values_to = "value") |>
+  filter(is.finite(value)) |>
+  mutate(score = factor(score, levels = score_names), group = factor(
+      claudin_low_gallo, levels = c(FALSE, TRUE), labels = c("No-low", "Claudin-low")))
+
+env_results <- vector("list", length(score_names))
+for (i in seq_along(score_names)) {
+  df <- filter(env_long, score == score_names[i])
+  low <- df$value[df$claudin_low_gallo]
+  non_low <- df$value[!df$claudin_low_gallo]
+  
+  test <- wilcox.test(low, non_low, paired = FALSE, alternative = "two.sided",
+                      exact = FALSE)
+  
+  env_results[[i]] <- data.frame(
+    score = score_names[i],
+    n_non_low = length(non_low),
+    median_non_low = median(non_low),
+    IQR_non_low = IQR(non_low),
+    n_low = length(low),
+    median_low = median(low),
+    IQR_low = IQR(low),
+    median_difference = median(low) - median(non_low),
+    p_value = test$p.value
+  )
+}
+
+env_group_results <- bind_rows(env_results) |>
+  mutate(FDR = p.adjust(p_value, method = "BH"))
+
+env_group_results
+
+env_labels <- env_group_results |>
+  mutate(label = paste0("Median difference = ", median_difference, 
+                        "\nFDR ", format.pval(FDR, digits = 2)))
+ggplot(env_long, aes(x = group, y = value)) +
+  geom_boxplot(aes(fill = group), width = 0.5, alpha = 0.6, outlier.shape = NA) +
+  geom_point(position = position_jitter(width = 0.15, height = 0, seed = 123),
+             alpha = 0.35, size = 1.2) +
+  facet_wrap(~ score, scales = "free_y", nrow = 1) +
+  geom_text(data = env_labels, aes(x = -Inf, y = Inf, label = label),
+            inherit.aes = FALSE, hjust = -0.1, vjust = 1.1, size = 3.5) +
+  scale_fill_manual(values = c("No-low" = "#BDBDBD", "Claudin-low" = "#E69F00")) +
+  labs(x = NULL, y = "Puntuación ESTIMATE") +
+  theme_classic(base_size = 12) + theme(legend.position = "none")
 
 
+# ******************************************************************************
+# LAUREN ANALYSIS
+# ******************************************************************************
+# 1 - Histología claudin low
+# 2 - Histología difusa vs scores (gallo y stromal)
+# 3 - 
 
-# 3. Ajuste e interpretación
-# Aplicaría Benjamini–Hochberg por separado a las dos familias de preguntas: 
-# los tres p-valores de correlación y los tres de comparación entre grupos. 
-# Así quedarían seis pruebas, organizadas en dos bloques predefinidos.
+# ******************************************************************************
+# STROMA, IMMUNE AND LAUREN ANALYSIS
+# ******************************************************************************
 
-# ...?
-
-
-# testers
-stopifnot(identical(colnames(counts), names(clusters)))
-if (any(!is.finite(gene_sd) | gene_sd == 0)) {
-  stop("Hay genes de la firma sin variabilidad entre muestras.")}
-
-
-
-# Breast cancer (Fougner):
-# Cogen una lista de 19 genes representing only the pathognomonic gene expression
-# characteristics of claudin-low tumors (manually selected on the basis of published
-# characterizations of claudin-low gene expression features and advances in understanding 
-# the etiological basis of claudin-low tumors).
-
-# hacen un clustering con datos de estos genes y su expresion: Hierarchical clustering 
-# using the reduced gene list was performed by complete linkage with Euclidean 
-# distance as the distance metric. Para identificar el perfil claudin low poniendo 
-# en comun otras variables clínicas/moleculares. We refer to tumors in this cluster
-# as core claudin-low (CoreCL), while claudin-low tumors (as defined by the nine-cell
-# line predictor) outside the CoreCL cluster are referred to as other claudin-low
-# (OtherCL). Individual inspection of gene expression values showed that OtherCL 
-# tumors displayed certain claudin-low characteristics, albeit to a lesser degree 
-# than CoreCL tumors. Thus, our method for identifying claudin-low tumors primarily 
-# differed from the nine-cell line predictor by filtering out a set of basal-like tumors
-# with high levels of stromal and immune infiltration but without pathognomonic 
-# claudin-low gene expression characteristics. 
-
-# The significance of the core claudin-low cluster was evaluated using SigClust.
-
-# It is therefore likely that OtherCL tumors are classified as claudin-low by the
-# nine-cell line predictor due to their stromal infiltration.
-
-# Limitaciones: The nine-cell line claudin-low predictor uses 807 genes, and Prat
-# et al. acknowledge that it may inappropriately identify some tumors as claudin-low 
-# solely due to stromal infiltration. We therefore considered whether a more targeted
-# gene list could be used for claudin-low classification, in order to more accurately
-# isolate features intrinsic to claudin-low tumors.
+# ******************************************************************************
+# TRANSCRIPTOMIC ANALYSIS
+# ******************************************************************************
