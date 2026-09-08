@@ -48,7 +48,7 @@ rnaseq_se <- readRDS(file.path(tcga_dir, "Prepared", "TCGA_STAD_rnaseq_se.rds"))
 # CLUSTERING
 # ******************************************************************************
 # data retrieving from 01_mRNA_data.R
-tpm_ind <- read_excel(here("misc", "data", "tpm_filtered_log2.xlsx"))
+tpm_ind <- readRDS(here("misc", "data", "tpm_ind.rds"))
 # t(matrix) para que la disimilitud se calcule usando los genes como variables
 tpm_z <- t(scale(t(tpm_ind)))
 
@@ -110,49 +110,44 @@ cc_resultsp <- ConsensusClusterPlus(
 # ******************************************************************************
 # ConsensusClusterPlus metrics
 # ******************************************************************************
+# PAC = Proportion of Ambiguous Clustering, es la proporción de valores de la 
+# matriz de consenso que se encuentran entre 0.1 y 0.9, es decir, que no son ni 
+# 0 ni 1. Un valor bajo de PAC indica que la mayoría de las muestras se asignan 
+# a un solo cluster con alta probabilidad, lo que sugiere una buena estabilidad 
+# del clustering.
+# miramos PACs (bajo = mejor)
 pac_results <- data.frame(
   k = 2:length(cc_results),
   PAC = sapply(2:length(cc_results), function(k) {
-    mat <- cc_results[[k]]$consensusMatrix
-    valores <- mat[upper.tri(mat)]
-    
-    mean(valores > 0.1 & valores < 0.9)
-  })
+    mat <- cc_results[[k]]$consensusMatrix # obtiene la matriz de consenso
+    valores <- mat[upper.tri(mat)] # obtiene los valores de la diagonal principal
+    mean(valores > 0.1 & valores < 0.9) # calcula la media de los valores ambiguos
+  }
+  )
 )
 
 pac_results
-pac_results[which.min(pac_results$PAC), ]
 
-icl_results <- calcICL(
-  cc_results,
-  plot = NULL,
-  writeTable = FALSE
-)
-
+icl_results <- calcICL(cc_results, plot = NULL, writeTable = FALSE)
 icl_results$clusterConsensus
 
 # ******************************************************************************
-pac_results <- data.frame(
+pac_resultsp <- data.frame(
   k = 2:length(cc_resultsp),
   PAC = sapply(2:length(cc_resultsp), function(k) {
     mat <- cc_resultsp[[k]]$consensusMatrix
     valores <- mat[upper.tri(mat)]
-    
     mean(valores > 0.1 & valores < 0.9)
-  })
+  }
+  )
 )
 
-pac_results
-pac_results[which.min(pac_results$PAC), ]
+pac_resultsp
 
-icl_results <- calcICL(
-  cc_resultsp,
-  plot = NULL,
-  writeTable = FALSE
-)
+pac_resultsp[which.min(pac_resultsp$PAC), ]
 
-icl_results$clusterConsensus
-
+icl_resultsp <- calcICL(cc_resultsp, plot = NULL, writeTable = FALSE)
+icl_resultsp$clusterConsensus
 
 # ******************************************************************************
 # NMF clustering

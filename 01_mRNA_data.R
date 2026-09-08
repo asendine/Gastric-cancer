@@ -43,9 +43,11 @@ cbiogdc_clin_sample <- read.delim(file.path(gdc_stad_dir, "data_clinical_sample.
                                   comment.char = "#",check.names = FALSE)
 # Retreiving TCGA data from .rds files *****************************************
 clinical_tcga <- readRDS(file.path(tcga_dir, "Prepared", "TCGA_STAD_clinical.rds"))
+
+
+
+tcga_dir <- Sys.getenv("TCGA_DATA")
 rnaseq_se <- readRDS(file.path(tcga_dir, "Prepared", "TCGA_STAD_rnaseq_se.rds"))
-
-
 
 # ******************************************************************************
 # RNA-SEQ
@@ -92,5 +94,5 @@ tpm_ind <- tpm_filt_log[ind_nmf, , drop=FALSE]
 dim(tpm_ind)
 class(tpm_ind)
 
-# se exporta el TPM filtrado y log2 a un archivo .csv
-write_xlsx(as.data.frame(tpm_ind), path = "misc/data/tpm_filtered_log2.xlsx")
+
+saveRDS(tpm_ind, here("misc", "data", "tpm_ind.rds"))
