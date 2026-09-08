@@ -27,52 +27,29 @@ for (i in libraries) {
   library(i, character.only = TRUE)
 }
 
-# directory definition ---------------------------------------------------------
+# directory definition *********************************************************
 cbio_dir <- Sys.getenv("CBIO_DATA")
 tcga_dir <- Sys.getenv("TCGA_DATA")
 pub_stad_dir <- file.path(cbio_dir, "stad_tcga_pub")
 gdc_stad_dir <- file.path(cbio_dir, "stad_tcga_gdc")
 
-# Retreiving cBioPortal data 1--------------------------------------------------
+# Retreiving cBioPortal data 1**************************************************
 cbiopub_clin_sample <- read.delim(file.path(pub_stad_dir, "data_clinical_sample.txt"),
                                   comment.char = "#",check.names = FALSE)
 cbiopub_clin_pat <- read.delim(file.path(pub_stad_dir, "data_clinical_patient.txt"),
                                comment.char = "#",check.names = FALSE)
-cbiopub_cna <- read.delim(file.path(pub_stad_dir, "data_cna.txt"),check.names = FALSE)
-cbiopub_cna_lin <- read.delim(file.path(pub_stad_dir, "data_linear_cna.txt"),
-                              check.names = FALSE)
-cbiopub_mrna <- read.delim(file.path(pub_stad_dir, "data_mrna_seq_v2_rsem.txt"),
-                           check.names = FALSE)
-cbiopub_zmrna <- read.delim(file.path(pub_stad_dir, "data_mrna_seq_v2_rsem_zscores_ref_all_samples.txt"),
-                            comment.char = "#", check.names = FALSE)
-cbiopub_mut <- read.delim(file.path(pub_stad_dir, "data_mutations.txt"),comment.char = "#",
-                          check.names = FALSE)
-
-# Retreiving cBioPortal data 2---------------------------------------------------
+# Retreiving cBioPortal data 2**************************************************
 cbiogdc_clin_sample <- read.delim(file.path(gdc_stad_dir, "data_clinical_sample.txt"),
                                   comment.char = "#",check.names = FALSE)
-cbiogdc_clin_pat <- read.delim(file.path(gdc_stad_dir, "data_clinical_patient.txt"),
-                               comment.char = "#",check.names = FALSE)
-cbiogdc_cna <- read.delim(file.path(gdc_stad_dir, "data_cna.txt"), check.names = FALSE)
-cbiogdc_mrna_tpm <- read.delim(file.path(gdc_stad_dir, "data_mrna_seq_tpm.txt"),
-                                check.names = FALSE)
-
-# directory definition ---------------------------------------------------------
-tcga_dir <- Sys.getenv("TCGA_DATA")
-
-# Retreiving TCGA data from .rds files -----------------------------------------
+# Retreiving TCGA data from .rds files *****************************************
 clinical_tcga <- readRDS(file.path(tcga_dir, "Prepared", "TCGA_STAD_clinical.rds"))
-cnv_se <- readRDS(file.path(tcga_dir, "Prepared", "TCGA_STAD_cnv_se.rds"))
-maf <- readRDS(file.path(tcga_dir, "Prepared", "TCGA_STAD_maf.rds"))
-methylation_450K_se <- readRDS(
-  file.path(tcga_dir, "Prepared", "TCGA_STAD_methylation_450K_se.rds"))
-mirna_se <- readRDS(file.path(tcga_dir, "Prepared", "TCGA_STAD_mirna_se.rds"))
 rnaseq_se <- readRDS(file.path(tcga_dir, "Prepared", "TCGA_STAD_rnaseq_se.rds"))
 
-# ******************************************************************************
-# EMPEZAMOS CON RNA-SEQ*********************************************************
-# ******************************************************************************
 
+
+# ******************************************************************************
+# RNA-SEQ
+# ******************************************************************************
 assayNames(rnaseq_se)
 # unstranded: raw count
 # stranded first: raw count a partir del 1a cDNA
@@ -80,231 +57,103 @@ assayNames(rnaseq_se)
 # tpm_unstrand: Transcripts Per Million calculated using unstranded raw counts.
 # fpkm_unstrand: Fragments Per Kilobase of transcript per Million mapped reads calculated from unstranded counts.
 # fpkm_uq_unstrand: Upper Quartile (UQ) normalized FPKM.
-tpm <- assay(rnaseq_se, "tpm_unstrand") # todas las muestras del proyecto TCGA-STAD con datos rna-seq
+
+
+
+# ******************************************************************************
+# Limpieza de datos y filtrado de genes
+# ******************************************************************************
+tpm <- assay(rnaseq_se, "tpm_unstrand")
 dim(tpm)
-class(tpm)
 anyNA(tpm)
-# esto es 448 muestras
-summary(colSums(tpm)) # paso extra cortesía de GPT, debería sumar 10^6
+# paso extra cortesía de GPT, debería sumar 10^6
+summary(colSums(tpm)) 
 sum(tpm == 0, na.rm = TRUE)
-# hay bastantes 0
 # eliminamos las muestras con valor 0 en todos sus genes
 tpm_filt <- tpm[, colSums(tpm > 0) > 0, drop = FALSE]
 dim(tpm_filt)
-# ahora se debería ver si todas las muestras que hay son de tumor o tejido normal
-# se ve que en los nombres de las columnas, es decir muestras, la posición 14-15
-# indica si es tumor (01:09) o tejido normal (10:19)
+# muestras de tumor o tejido normal?
+# tumor (01:09) o tejido normal (10:19)
 tpm_tumor <- tpm_filt[, substr(colnames(tpm_filt), 14, 15) %in% sprintf("%02d", 1:9), drop = FALSE]
 dim(tpm_tumor)
-# hay 412 muestras de tumor, se revisa posible duplicados de muestras
+# duplicados de muestras
 patient_id <- substr(colnames(tpm_tumor), 1, 12)
 sample_id  <- substr(colnames(tpm_tumor), 1, 15)
-anyDuplicated(patient_id)
-anyDuplicated(sample_id)
-table(patient_id)[table(patient_id) > 1]
-table(sample_id)[table(sample_id) > 1]
-# no se elimina nada, todo parece ok
-# ahora se mantendran los genes con un tpm >= 1 en el 25% de las muestras
-# se calcula qué número es el 25%
-n_min <- ceiling(0.25*ncol(tpm_tumor))
-# se suma el valor de cada tpm por fila si es >= 1 y, se indica TRUE si el resultado es >= 103
-genes_exp <- rowSums(tpm_tumor >= 1) >= n_min
-# nos queda una variable con valores TRUE/FALSE por fila según si cumple o no las condiciones
+stopif(anyDuplicated(patient_id))
+stopif(anyDuplicated(sample_id))
+# genes tpm >= 1 en el 25% de las muestras
+n_min <- ceiling(0.25*ncol(tpm_tumor)) # nº minimo muestras
+genes_exp <- rowSums(tpm_tumor >= 1) >= n_min # genes con tpm >=1 en el min de muestras
 tpm_filt2 <- tpm_tumor[genes_exp, , drop = FALSE]
 dim(tpm_filt2)
-# quedan 21k genes
-# se transforman los datos a log
 tpm_filt_log <- log2(tpm_filt2 + 1)
-
-# Buscamos BACTH EFFECT
-# se realiza un análisis del efecto batch simplemente por añadir calidad al workflow
-# ya que sabemos por la documentación oficial que solamente hay un ligero batch effect en 
-# datos de miRNA (1/4 analizados) pero no es trascendente. También se puede hacer la 
-# visualización directa en la web de MDAnderson sin tener que hacerlo en R (tienen un
-# web browser para ello, PCA Plus).
-# A partir del nombre de las muestras se obtiene el id de placa y el TSS (origen muestra)
-# que estan en las posiciones 6 y 2 respectivamente (TCGA-BR-4257-01A-01R-1131-13).
-barcode_parts <- do.call(rbind, strsplit(colnames(rnaseq_se), "-", fixed = TRUE))
-colData(rnaseq_se)$TSS <- factor(barcode_parts[, 2])
-colData(rnaseq_se)$PlateId <- factor(barcode_parts[, 6])
-batch_info <- as.data.frame(colData(rnaseq_se)[,c("TSS", "PlateId")])
-
-pca_batch <- prcomp(t(tpm_filt_log), center = TRUE, scale. = FALSE)
-variance_explained <- 100*pca_batch$sdev^2/sum(pca_batch$sdev^2)
-sample_position <- match(rownames(pca_batch$x), colnames(rnaseq_se))
-pca_batch_df <- data.frame(sample = rownames(pca_batch$x),
-                           PC1 = pca_batch$x[, 1],
-                           PC2 = pca_batch$x[, 2],
-                           PlateId = batch_info$PlateId[sample_position],
-                           TSS = batch_info$TSS[sample_position])
-
-pca_background <- pca_batch_df[, c("PC1", "PC2")]
-
-ggplot(pca_batch_df, aes(PC1, PC2)) + 
-  geom_point(data = pca_background, aes(PC1, PC2), inherit.aes = FALSE, 
-             color = "grey85", size = 0.7) + 
-  geom_point(color = "#D55E00", size = 1.3, alpha = 0.9) + 
-  facet_wrap(~ TSS, ncol = 5) +
-  labs(title = "PCA: distribución de las muestras por TSS", 
-       x = paste0("PC1 (", round(variance_explained[1], 1), "%)"),
-       y = paste0("PC2 (", round(variance_explained[2], 1), "%)")) +
-  theme_bw() +
-  theme(legend.position = "none", strip.text = element_text(face = "bold"))
-
-ggplot(pca_batch_df, aes(PC1, PC2)) + 
-  geom_point(data = pca_background, aes(PC1, PC2), inherit.aes = FALSE, 
-             color = "grey85", size = 0.7) + 
-  geom_point(color = "#0072B2", size = 1.3, alpha = 0.9) + 
-  facet_wrap(~ PlateId, ncol = 5) +
-  labs(title = "PCA: distribución de las muestras por ID de placa", 
-       x = paste0("PC1 (", round(variance_explained[1], 1), "%)"),
-       y = paste0("PC2 (", round(variance_explained[2], 1), "%)")) +
-  theme_bw() +
-  theme(legend.position = "none", strip.text = element_text(face = "bold"))
-
-# Ahora se buscan OUTLIERS
-# para buscar outliers se realiza un PCA. Se usa PCAtools, a ver qué tal
-pca_outliers <- PCAtools::pca(mat = tpm_filt_log, center = TRUE, 
-                              scale = FALSE, removeVar = NULL)
-
-# screeplot para ver % var explicada por cada componente
-PCAtools::screeplot(pcaobj = pca_outliers, 
-                    components = PCAtools::getComponents(pca_outliers, 1:20), 
-                    title = "PCA de expresión: análisis de outliers")
-
-# no está mal hacer un pairsplot entre las diferentes componentes, pero si hay
-# muchas muestras y queremos ver muchas componentes, entonces no se verá bien
-PCAtools::pairsplot(pcaobj = pca_outliers, 
-                    components = PCAtools::getComponents(pca_outliers, 1:4),
-                    triangle  = TRUE) # a partir de 4 la cosa empeora
-# a partir de los plots anteriores, no se aprecian outliers
-
-# ahora se puede buscar si hay genes que dominen alguna componente concreta
-# se obtiene la info de genes
-gene_info <- as.data.frame(rowData(rnaseq_se))
-# se obtiene la posición de las filas de los genes que nos interesan con match
-gene_index <- match(rownames(tpm_filt_log), rownames(rnaseq_se))
-# se crea el dataset específico con ambas notaciones
-gene_map <- data.frame(ensembl_id = rownames(tpm_filt_log),
-                       gene_name = gene_info$gene_name[gene_index])
-# a partir de aquí se crea una función para determinar los genes que más contribuyen
-get_top_genes <- function(pca_object, pc, gene_map, n = 10) { # dado un pca, una componente, la leyenda y el nº de genes a comprobar
-  loading_values <- pca_object$loadings[, pc] 
-  # se obtienen los pesos
-  top_idx <- order(abs(loading_values), decreasing = TRUE)[seq_len(n)]
-  # se obtienen los n pesos por valor absoluto decreciente
-  ensembl_ids <- rownames(pca_object$loadings)[top_idx]
-  # se obtienen los ids de los genes con esos pesos
-  data.frame(PC = pc,
-             gene_name = gene_map$gene_name[match(ensembl_ids, gene_map$ensembl_id)],
-             ensembl_id = ensembl_ids,
-             loading = loading_values[top_idx],
-             contribution_pct = 100*loading_values[top_idx]^2)
-  # se hace un dataframe con la pc elegida, se busca el gene name con la leyenda indicada,
-  # se indica el ensemble id, el peso obtenido y las contribuciones
-  }
-
-# aquí se puede ver qué genes dominan las componentes en este caso la 1 y 2
-cont_PC1 <- get_top_genes(pca_outliers, "PC1", gene_map, n = 10)
-cont_PC2 <- get_top_genes(pca_outliers, "PC2", gene_map, n = 10)
-cont_PC1
-cont_PC2
-
-# pendiente ver si estos genes se asocian con alguna característica concreta
-
-# ------------------------------------------------------------------------------
-# DESCUBRIMIENTO DE LOS CLÚSTERS # ---------------------------------------------
-# ------------------------------------------------------------------------------
-# Ahora se filtra por variabilidad de expresión (median absolute deviation) buscando el 25% más variable
-gene_mad <- apply(tpm_filt_log, 1, mad) # esto da un vector de mad aplicado a cada fila (1) de la matrix indicada
-# igual que genes_exp pero numérico en vez de lógico
-top <- ceiling(0.25*nrow(tpm_filt_log)) # se obtiene el nº de genes = 25%
-ind <- order(gene_mad, decreasing = TRUE)[seq_len(top)] 
-# order devuelve la posición
-# seq_len crea un vector del 1 al 5349
-# se obtienen las posiciones (filas) del 1 al 5349
-
-# se limita el dataset a las filas que hay en ind
-tpm_ind <- tpm_filt_log[ind, , drop=FALSE]
-dim(tpm_ind)
-# quedan 5349 genes
-
-# tras probar diferentes clusterizaciones ambiguas, creo que la clave puede estar
-# en reducir más el número de genes, ya que 5349 genes es un número alto comparado
-# con los artículos que estoy encontrando.
-ind_nmf <- order(gene_mad, decreasing = TRUE)[seq_len(1500)] 
-# se obtienen las posiciones (filas) del 1 al 1500
-# se limita el dataset a las filas que hay en ind
+# median absolute deviation (mad) POST log
+gene_mad <- apply(tpm_filt_log, 1, mad)
+ind_nmf <- order(gene_mad, decreasing = TRUE)[seq_len(1500)]
 tpm_ind <- tpm_filt_log[ind_nmf, , drop=FALSE]
 dim(tpm_ind)
-# quedan 1500 genes
-# porqué 1500? porque si, es arbitrario y aprox lo que escogen en el estudio de 
-# referencia
 
-# separar estas muestras en clústers
-# como queremos clusterizar muestras (columnas) habría que transponer la matriz 
-# para que la disimilitud se calcule usando los genes como variables
 
-# primero se transpone la matriz, se hace el z-score y se vuelve a transponer de nuevo.
+# ******************************************************************************
+# CLUSTERING
+# ******************************************************************************
+# t(matrix) para que la disimilitud se calcule usando los genes como variables
 tpm_z <- t(scale(t(tpm_ind)))
-sum(is.na(tpm_z))
-dim(tpm_z)
 
-# clustering 1: euclidean + ward.D2. Distancia + clust
+
+# ******************************************************************************
+# clustering 1: euclidean + ward.D2
+# ******************************************************************************
 d <- dist(t(tpm_z), method = "euclidean")
 hcl <- hclust(d, method = "ward.D2")
-plot(hcl, labels = FALSE, hang = -1, main = "Hierarchical clust: euc + wardd2", xlab = "muestras")
+plot(hcl, labels = FALSE, hang = -1, main = "Hierarchical clust: euc + wardd2", 
+     xlab = "muestras")
 
-# clustering 2: 1-Pearson + average, mide correlaciones entre columnas (muestras)
-# se calcula la correlacion y la dist
+# ******************************************************************************
+# clustering 2: 1-Pearson + average
+# ******************************************************************************
 corPearson <- cor(tpm_z, method = "pearson", use = "pairwise.complete.obs")
 dist_pearson <- as.dist(1 - corPearson)
-# se hace el cluster
 hcl_p <- hclust(dist_pearson, method = "average")
-plot(hcl_p, labels = FALSE, hang = -1, main = "Hierarchical clust: 1-Pearson + average", xlab = "muestras")
+plot(hcl_p, labels = FALSE, hang = -1, 
+     main = "Hierarchical clust: 1-Pearson + average", xlab = "muestras")
 
-# clustering 3: ConsensusClusterPlus + euclidean/ward.d2
+# ******************************************************************************
+# clustering 3: ConsensusClusterPlus euclidean + ward.d2
+# ******************************************************************************
 cc_input <- as.matrix(tpm_z)
-cc_dir <- file.path(getwd(), "output", "consensus_euclidean_wardD2")
-cc_dir <- normalizePath(cc_dir, winslash = "/", mustWork = TRUE)
 cc_results <- ConsensusClusterPlus(
   d             = cc_input,
   maxK          = 6,             # evalúa k = 2,...,6
   reps          = 500,           # 500 remuestreos
   pItem         = 0.80,          # 80% de las muestras en cada repetición
   pFeature      = 0.80,          # 80% de los genes en cada repetición
-  clusterAlg    = "hc",          # clustering jerárquico
+  clusterAlg    = "hc",          
   distance      = "euclidean",
   innerLinkage  = "ward.D2",     # algoritmo aplicado en cada repetición
   finalLinkage  = "average",     # agrupación final de la matriz de consenso
   seed          = 1234,
-  title         = cc_dir,
-  plot          = "png",
+  plot          = NULL,
   writeTable    = FALSE,
-  verbose       = TRUE
-)
+  verbose       = TRUE)
+
+# ******************************************************************************
 # clustering 4: ConsensusClusterPlus + 1-pearson + average
-cc_dir2 <- file.path(getwd(), "output", "consensus_pearson_average")
-cc_dir2 <- normalizePath(cc_dir2, winslash = "/", mustWork = TRUE)
+# ******************************************************************************
 cc_resultsp <- ConsensusClusterPlus(
   d             = cc_input,
   maxK          = 6,             # evalúa k = 2,...,6
   reps          = 500,           # 500 remuestreos
   pItem         = 0.80,          # 80% de las muestras en cada repetición
   pFeature      = 0.80,          # 80% de los genes en cada repetición
-  clusterAlg    = "hc",          # clustering jerárquico
+  clusterAlg    = "hc",          
   distance      = "pearson",
   innerLinkage  = "average",     # algoritmo aplicado en cada repetición
   finalLinkage  = "average",     # agrupación final de la matriz de consenso
   seed          = 1234,
-  title         = cc_dir2,
-  plot          = "png",
+  plot          = NULL,
   writeTable    = FALSE,
-  verbose       = TRUE
-)
-
-# ------------------------------------------------------------------------------
-# ------------------------------------------------------------------------------
+  verbose       = TRUE)
 
 # Al final tras probar diferentes métodos de clusterización con tpm_z:
 # no hay una solidez en cuanto a las agrupaciones, algunos clústers son difusos
