@@ -12,7 +12,7 @@ for (pkg in bioc_packages) {
 }
 
 # install-packages-CRAN --------------------------------------------------------
-packages <- c("data.table", "dataframeexplorer", "devtools", "NMF")
+packages <- c("data.table", "dataframeexplorer", "devtools", "NMF", 'writexl')
 for (pkg in packages) {
   if (!requireNamespace(pkg, quietly = TRUE))
     install.packages(pkg)
@@ -22,7 +22,7 @@ for (pkg in packages) {
 libraries <- c("cBioPortalData", "TCGAbiolinks", "SummarizedExperiment", "dplyr",
                "ComplexHeatmap", "data.table", "dataframeexplorer", "devtools", 
                "cluster", "edgeR", 'limma', 'grid', 'ggplot2', 'PCAtools', 
-               'ConsensusClusterPlus', 'NMF')
+               'ConsensusClusterPlus', 'NMF', 'writexl')
 for (i in libraries) {
   library(i, character.only = TRUE)
 }
@@ -46,163 +46,9 @@ clinical_tcga <- readRDS(file.path(tcga_dir, "Prepared", "TCGA_STAD_clinical.rds
 rnaseq_se <- readRDS(file.path(tcga_dir, "Prepared", "TCGA_STAD_rnaseq_se.rds"))
 
 
-
 # ******************************************************************************
-# RNA-SEQ
+# CARACTERIZACIÓN DE LOS CLÚSTERS
 # ******************************************************************************
-assayNames(rnaseq_se)
-# unstranded: raw count
-# stranded first: raw count a partir del 1a cDNA
-# stranded second: raw count a partir del primer cDNA
-# tpm_unstrand: Transcripts Per Million calculated using unstranded raw counts.
-# fpkm_unstrand: Fragments Per Kilobase of transcript per Million mapped reads calculated from unstranded counts.
-# fpkm_uq_unstrand: Upper Quartile (UQ) normalized FPKM.
-
-
-
-# ******************************************************************************
-# Limpieza de datos y filtrado de genes
-# ******************************************************************************
-tpm <- assay(rnaseq_se, "tpm_unstrand")
-dim(tpm)
-anyNA(tpm)
-# paso extra cortesía de GPT, debería sumar 10^6
-summary(colSums(tpm)) 
-sum(tpm == 0, na.rm = TRUE)
-# eliminamos las muestras con valor 0 en todos sus genes
-tpm_filt <- tpm[, colSums(tpm > 0) > 0, drop = FALSE]
-dim(tpm_filt)
-# muestras de tumor o tejido normal?
-# tumor (01:09) o tejido normal (10:19)
-tpm_tumor <- tpm_filt[, substr(colnames(tpm_filt), 14, 15) %in% sprintf("%02d", 1:9), drop = FALSE]
-dim(tpm_tumor)
-# duplicados de muestras
-patient_id <- substr(colnames(tpm_tumor), 1, 12)
-sample_id  <- substr(colnames(tpm_tumor), 1, 15)
-stopif(anyDuplicated(patient_id))
-stopif(anyDuplicated(sample_id))
-# genes tpm >= 1 en el 25% de las muestras
-n_min <- ceiling(0.25*ncol(tpm_tumor)) # nº minimo muestras
-genes_exp <- rowSums(tpm_tumor >= 1) >= n_min # genes con tpm >=1 en el min de muestras
-tpm_filt2 <- tpm_tumor[genes_exp, , drop = FALSE]
-dim(tpm_filt2)
-tpm_filt_log <- log2(tpm_filt2 + 1)
-# median absolute deviation (mad) POST log
-gene_mad <- apply(tpm_filt_log, 1, mad)
-ind_nmf <- order(gene_mad, decreasing = TRUE)[seq_len(1500)]
-tpm_ind <- tpm_filt_log[ind_nmf, , drop=FALSE]
-dim(tpm_ind)
-
-
-# ******************************************************************************
-# CLUSTERING
-# ******************************************************************************
-# t(matrix) para que la disimilitud se calcule usando los genes como variables
-tpm_z <- t(scale(t(tpm_ind)))
-
-
-# ******************************************************************************
-# clustering 1: euclidean + ward.D2
-# ******************************************************************************
-d <- dist(t(tpm_z), method = "euclidean")
-hcl <- hclust(d, method = "ward.D2")
-plot(hcl, labels = FALSE, hang = -1, main = "Hierarchical clust: euc + wardd2", 
-     xlab = "muestras")
-
-# ******************************************************************************
-# clustering 2: 1-Pearson + average
-# ******************************************************************************
-corPearson <- cor(tpm_z, method = "pearson", use = "pairwise.complete.obs")
-dist_pearson <- as.dist(1 - corPearson)
-hcl_p <- hclust(dist_pearson, method = "average")
-plot(hcl_p, labels = FALSE, hang = -1, 
-     main = "Hierarchical clust: 1-Pearson + average", xlab = "muestras")
-
-# ******************************************************************************
-# clustering 3: ConsensusClusterPlus euclidean + ward.d2
-# ******************************************************************************
-cc_input <- as.matrix(tpm_z)
-cc_results <- ConsensusClusterPlus(
-  d             = cc_input,
-  maxK          = 6,             # evalúa k = 2,...,6
-  reps          = 500,           # 500 remuestreos
-  pItem         = 0.80,          # 80% de las muestras en cada repetición
-  pFeature      = 0.80,          # 80% de los genes en cada repetición
-  clusterAlg    = "hc",          
-  distance      = "euclidean",
-  innerLinkage  = "ward.D2",     # algoritmo aplicado en cada repetición
-  finalLinkage  = "average",     # agrupación final de la matriz de consenso
-  seed          = 1234,
-  plot          = NULL,
-  writeTable    = FALSE,
-  verbose       = TRUE)
-
-# ******************************************************************************
-# clustering 4: ConsensusClusterPlus + 1-pearson + average
-# ******************************************************************************
-cc_resultsp <- ConsensusClusterPlus(
-  d             = cc_input,
-  maxK          = 6,             # evalúa k = 2,...,6
-  reps          = 500,           # 500 remuestreos
-  pItem         = 0.80,          # 80% de las muestras en cada repetición
-  pFeature      = 0.80,          # 80% de los genes en cada repetición
-  clusterAlg    = "hc",          
-  distance      = "pearson",
-  innerLinkage  = "average",     # algoritmo aplicado en cada repetición
-  finalLinkage  = "average",     # agrupación final de la matriz de consenso
-  seed          = 1234,
-  plot          = NULL,
-  writeTable    = FALSE,
-  verbose       = TRUE)
-
-# Al final tras probar diferentes métodos de clusterización con tpm_z:
-# no hay una solidez en cuanto a las agrupaciones, algunos clústers son difusos
-# el consensus con pearson obtiene una clasificación algo más clara, pero el número 
-# de k a escoger no parece demasiado claro, presenta codo difuso en k = 6.
-
-# cambio de planes, se prueba el método del artículo, evaluación del número de 
-# clústeres x algoritmo de brunet con el paquete NMF
-nmf_rank <- nmfEstimateRank(
-  x      = tpm_ind,
-  range  = 3:6,
-  method = "brunet",
-  nrun   = 30,
-  seed   = 1234)
-
-plot(nmf_rank)
-
-# A partir de los resultados obtenidos lo más importante es:
-# cophenetic = reproductibilidad asignaciones
-# dispersion = grado de consenso a valores puros 0 u 1
-# evar = varianza explicada
-# rss y residuals = errores respecto la matriz original
-# silhouette = separación de los grupos (coef)
-# sparseness = indica cada componente si esta dominado por pocos genes o muestras
-
-consensusmap(nmf_rank$fit[["3"]], labRow = NA, labCol = NA, tracks = NA)
-consensusmap(nmf_rank$fit[["4"]], labRow = NA, labCol = NA, tracks = NA)
-consensusmap(nmf_rank$fit[["5"]], labRow = NA, labCol = NA, tracks = NA)
-consensusmap(nmf_rank$fit[["6"]], labRow = NA, labCol = NA, tracks = NA)
-
-criteria_k <- data.frame(K=nmf_rank[["measures"]][["rank"]], 
-                         Sil.coef = nmf_rank[["measures"]][["silhouette.coef"]],
-                         Sil.con = nmf_rank[["measures"]][["silhouette.consensus"]])
-criteria_k
-
-# viendo las imágenes de los diferentes consensusmaps y gráficos y por las métricas obtenidas
-# se podría escoger un valor de k = 3 o 6, ya que los valores diana disminuyen en k = 4 y 5.
-# tampoco es que sean valores malos... es difícil, pasa lo mismo que con consensusclusterplus
-# tras hacer diferentes test planteados por GPT, me queda la opción de hacer una
-# consulta a claude para comparar o bien elegir una clusterización según mi criterio
-# ya que el criterio numérico/objetivo no es del todo concluyente.
-
-# creo que me decanto por hacer k = 6 porque a malas permite obtener mayor resolución. 
-# Al final dado que el código es más o menos idéntico en cualquier escenario, 
-# siempre se puede cambiar y revisar los resultados.
-
-# ------------------------------------------------------------------------------
-# CARACTERIZACIÓN DE LOS CLÚSTERS # --------------------------------------------
-# ------------------------------------------------------------------------------
 # el siguiente paso es encontrar las "core samples", aquellas con anchura de silueta
 # más positiva ~mayor similaridad con su cluster.
 # "Samples most representative of the clusters, hereby called core samples were 
@@ -216,6 +62,8 @@ criteria_k
 # obtener solamente las muestras que más definan un cluster sin pasarnos. El criterio
 # silueta > 0 no discrimina nada, empezaría a ser interesante con sil > 0.6, en el que
 # se eliminarían algunas muestras, quizá un 30%, que ya está bien.
+
+nmf_rank <- readRDS("misc/data/nmf_rank.rds")
 
 # se obtienen los datos de k = 6
 fit <- nmf_rank$fit[["6"]]
