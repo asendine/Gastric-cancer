@@ -22,7 +22,7 @@ for (pkg in packages) {
 libraries <- c("cBioPortalData", "TCGAbiolinks", "SummarizedExperiment", "dplyr",
                "ComplexHeatmap", "data.table", "dataframeexplorer", "devtools", 
                "cluster", "edgeR", 'limma', 'grid', 'ggplot2', 'PCAtools', 
-               'ConsensusClusterPlus', 'NMF', 'writexl')
+               'ConsensusClusterPlus', 'NMF', 'writexl', 'here')
 for (i in libraries) {
   library(i, character.only = TRUE)
 }
@@ -127,7 +127,9 @@ pac_results <- data.frame(
 )
 
 pac_results
-
+# el icl es un índice de estabilidad de clustering que combina la información 
+# de la matriz de consenso y la asignación de clusters. Un valor más alto de ICL
+# indica una mayor estabilidad del clustering.
 icl_results <- calcICL(cc_results, plot = NULL, writeTable = FALSE)
 icl_results$clusterConsensus
 
@@ -150,6 +152,12 @@ icl_resultsp <- calcICL(cc_resultsp, plot = NULL, writeTable = FALSE)
 icl_resultsp$clusterConsensus
 
 # ******************************************************************************
+# k selection
+# ******************************************************************************
+
+
+
+# ******************************************************************************
 # NMF clustering
 # ******************************************************************************
 nmf_rank <- nmfEstimateRank(
@@ -160,6 +168,7 @@ nmf_rank <- nmfEstimateRank(
   seed   = 1234)
 
 saveRDS(nmf_rank, file = "misc/data/nmf_rank.rds")
+
 # ******************************************************************************
 # NMF metrics
 # ******************************************************************************
@@ -181,3 +190,22 @@ criteria_k <- data.frame(K=nmf_rank[["measures"]][["rank"]],
                          Sil.coef = nmf_rank[["measures"]][["silhouette.coef"]],
                          Sil.con = nmf_rank[["measures"]][["silhouette.consensus"]])
 criteria_k
+
+# ******************************************************************************
+# número de clústers: hcl y hcl_p
+# ******************************************************************************
+
+# ******************************************************************************
+# métricas
+# ******************************************************************************
+
+# silueta
+# codo
+# gap statistic
+# nbclust (consensus voting)
+
+# ******************************************************************************
+# corte - asociación de muestras a clústers
+# ******************************************************************************
+clusters_hcl <- cutree(hcl, k = 4)
+clusters_hcl_p <- cutree(hcl_p, k = 4)
