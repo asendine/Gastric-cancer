@@ -1,23 +1,3 @@
-# Install packages CBIO --------------------------------------------------------
-bioc_packages <- c(
-  "cBioPortalData",
-  "TCGAbiolinks",
-  "SummarizedExperiment",
-  "PCAtools",
-  "ConsensusClusterPlus"
-)
-for (pkg in bioc_packages) {
-  if (!requireNamespace(pkg, quietly = TRUE))
-    BiocManager::install(pkg)
-}
-
-# install-packages-CRAN --------------------------------------------------------
-packages <- c("data.table", "dataframeexplorer", "devtools", "NMF", 'writexl')
-for (pkg in packages) {
-  if (!requireNamespace(pkg, quietly = TRUE))
-    install.packages(pkg)
-}
-
 # libraries --------------------------------------------------------------------
 libraries <- c("cBioPortalData", "TCGAbiolinks", "SummarizedExperiment", "dplyr",
                "ComplexHeatmap", "data.table", "dataframeexplorer", "devtools", 
@@ -30,4 +10,6 @@ for (i in libraries) {
 # directory definition *********************************************************
 cbio_dir <- Sys.getenv("CBIO_DATA")
 tcga_dir <- Sys.getenv("TCGA_DATA")
+pub_stad_dir <- file.path(cbio_dir, "stad_tcga_pub")
+gdc_stad_dir <- file.path(cbio_dir, "stad_tcga_gdc")
 

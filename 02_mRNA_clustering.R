@@ -2,7 +2,7 @@
 libraries <- c("cBioPortalData", "TCGAbiolinks", "SummarizedExperiment", "dplyr",
                "ComplexHeatmap", "data.table", "dataframeexplorer", "devtools", 
                "cluster", "edgeR", 'limma', 'grid', 'ggplot2', 'PCAtools', 
-               'ConsensusClusterPlus', 'NMF', 'writexl', 'here', 'fpc')
+               'ConsensusClusterPlus', 'NMF', 'writexl', 'here', 'fpc','NbClust')
 for (i in libraries) {
   library(i, character.only = TRUE)
 }
@@ -106,7 +106,7 @@ metricas
 silhouette_por_cluster
 
 # ******************************************************************************
-# usando nbclust
+# usando NbClust (lo mismo pero más automátizado)
 # ******************************************************************************
 
 indices <- c("silhouette", "dunn", "cindex", "mcclain")
@@ -131,13 +131,14 @@ for (indice in indices) {
                                   index = indice)
 }
 
-# Valores de los indices para cada k.
+# Valores de los indices para cada k
 metricas_nb_euc <- sapply(nb_euc, "[[", "All.index")
 metricas_nb_pearson <- sapply(nb_pearson, "[[", "All.index")
 
-# k recomendado por cada indice y su valor.
+# k recomendado por cada indice y valor obtenido
 mejores_k_euc <- sapply(nb_euc, "[[", "Best.nc")
 mejores_k_pearson <- sapply(nb_pearson, "[[", "Best.nc")
+
 
 metricas_nb_euc
 metricas_nb_pearson
@@ -261,17 +262,26 @@ criteria_k <- data.frame(K=nmf_rank[["measures"]][["rank"]],
 criteria_k
 
 # ******************************************************************************
-# número de clústers: hcl y hcl_p
+# número de clústers
 # ******************************************************************************
 
 # hcl y hcl_p
+# euclidean -> k = 3 o quizá 5 
+# pearson -> k = 3 o 4 aprox igual
 
 # ConsensusClusterPlus
+# euc -> k = 6 (0.5153072)
+# pearson -> k = 6 (0.4740510)
+# cuanto más alto el valor de k menor es el PAC. Esto no cuadra mucho, pdnte investigar.
 
 # NMF clustering
+# k = 3 - Sil.coef(0.6362434) - Sil.con(0.9277994)
 
-
+# procederemos con k = 3 por ahora
 
 # ******************************************************************************
 # corte - asociación de muestras a clústers
 # ******************************************************************************
+
+k <- 3
+
