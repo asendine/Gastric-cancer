@@ -1,28 +1,8 @@
-# Install packages CBIO --------------------------------------------------------
-bioc_packages <- c(
-  "cBioPortalData",
-  "TCGAbiolinks",
-  "SummarizedExperiment",
-  "PCAtools",
-  "ConsensusClusterPlus"
-)
-for (pkg in bioc_packages) {
-  if (!requireNamespace(pkg, quietly = TRUE))
-    BiocManager::install(pkg)
-}
-
-# install-packages-CRAN --------------------------------------------------------
-packages <- c("data.table", "dataframeexplorer", "devtools", "NMF", 'writexl')
-for (pkg in packages) {
-  if (!requireNamespace(pkg, quietly = TRUE))
-    install.packages(pkg)
-}
-
 # libraries --------------------------------------------------------------------
 libraries <- c("cBioPortalData", "TCGAbiolinks", "SummarizedExperiment", "dplyr",
                "ComplexHeatmap", "data.table", "dataframeexplorer", "devtools", 
                "cluster", "edgeR", 'limma', 'grid', 'ggplot2', 'PCAtools', 
-               'ConsensusClusterPlus', 'NMF', 'writexl', 'here')
+               'ConsensusClusterPlus', 'NMF', 'writexl', 'here', 'fpc')
 for (i in libraries) {
   library(i, character.only = TRUE)
 }
@@ -30,6 +10,9 @@ for (i in libraries) {
 # directory definition *********************************************************
 cbio_dir <- Sys.getenv("CBIO_DATA")
 tcga_dir <- Sys.getenv("TCGA_DATA")
+pub_stad_dir <- file.path(cbio_dir, "stad_tcga_pub")
+gdc_stad_dir <- file.path(cbio_dir, "stad_tcga_gdc")
+
 
 # Retreiving cBioPortal data 1**************************************************
 cbiopub_clin_sample <- read.delim(file.path(pub_stad_dir, "data_clinical_sample.txt"),
@@ -69,6 +52,98 @@ dist_pearson <- as.dist(1 - corPearson)
 hcl_p <- hclust(dist_pearson, method = "average")
 plot(hcl_p, labels = FALSE, hang = -1, 
      main = "Hierarchical clust: 1-Pearson + average", xlab = "muestras")
+
+# ******************************************************************************
+# hclust metrics
+# ******************************************************************************
+
+# silhouette (-1 a 1): distancia media de la muestra en su cluster vs otro cluster.
+# Media por clúster o global.
+
+# Índice de Dunn: La distancia más pequeña entre dos puntos que pertenecen a 
+# clústeres diferentes / la distancia más grande entre dos puntos dentro del 
+# mismo clúster. Mayor = mejor.
+
+# Calinski–Harabasz: mide el grado de separación entre grupos y si estos son 
+# compactos. Mayor = mejor.
+
+k_values <- 2:6
+
+arboles <- list(euclidean_wardD2 = hcl, pearson_average = hcl_p)
+
+distancias <- list(euclidean_wardD2 = d, pearson_average = dist_pearson)
+
+metricas <- data.frame()
+
+silhouette_por_cluster <- data.frame()
+
+for (metodo in names(arboles)) {
+  for (k in k_values) {
+    
+    grupos <- cutree(arboles[[metodo]], k = k) # genera los k clusters
+    # paquete fpc, cluster.stats obtiene las métricas que necesito
+    res <- cluster.stats(d = distancias[[metodo]],
+                         clustering = grupos,
+                         wgap = FALSE, sepindex = FALSE) # no necesarios 
+    # se obtienen las métricas
+    metricas <- rbind(metricas, data.frame(metodo = metodo,
+                                           k = k,
+                                           silhouette = res$avg.silwidth,
+                                           dunn = res$dunn,
+                                           calinski_harabasz = res$ch))
+    # y las siluetas por cluster
+    silhouette_por_cluster <- rbind(silhouette_por_cluster, data.frame(
+      metodo = metodo,
+      k = k,
+      cluster = seq_len(k),
+      n = res$cluster.size,
+      silhouette = as.numeric(res$clus.avg.silwidths)))
+  }
+}
+
+metricas
+
+silhouette_por_cluster
+
+# ******************************************************************************
+# usando nbclust
+# ******************************************************************************
+
+indices <- c("silhouette", "dunn", "cindex", "mcclain")
+
+nb_euc <- list()
+nb_pearson <- list()
+
+for (indice in indices) {
+  
+  nb_euc[[indice]] <- NbClust(data = NULL,
+                              diss = d,
+                              distance = NULL,
+                              min.nc = 3, max.nc = 6,
+                              method = "ward.D2",
+                              index = indice)
+  
+  nb_pearson[[indice]] <- NbClust(data = NULL,
+                                  diss = dist_pearson,
+                                  distance = NULL,
+                                  min.nc = 3, max.nc = 6,
+                                  method = "average",
+                                  index = indice)
+}
+
+# Valores de los indices para cada k.
+metricas_nb_euc <- sapply(nb_euc, "[[", "All.index")
+metricas_nb_pearson <- sapply(nb_pearson, "[[", "All.index")
+
+# k recomendado por cada indice y su valor.
+mejores_k_euc <- sapply(nb_euc, "[[", "Best.nc")
+mejores_k_pearson <- sapply(nb_pearson, "[[", "Best.nc")
+
+metricas_nb_euc
+metricas_nb_pearson
+
+mejores_k_euc
+mejores_k_pearson
 
 # ******************************************************************************
 # clustering 3: ConsensusClusterPlus euclidean + ward.d2
@@ -152,12 +227,6 @@ icl_resultsp <- calcICL(cc_resultsp, plot = NULL, writeTable = FALSE)
 icl_resultsp$clusterConsensus
 
 # ******************************************************************************
-# k selection
-# ******************************************************************************
-
-
-
-# ******************************************************************************
 # NMF clustering
 # ******************************************************************************
 nmf_rank <- nmfEstimateRank(
@@ -195,17 +264,14 @@ criteria_k
 # número de clústers: hcl y hcl_p
 # ******************************************************************************
 
-# ******************************************************************************
-# métricas
-# ******************************************************************************
+# hcl y hcl_p
 
-# silueta
-# codo
-# gap statistic
-# nbclust (consensus voting)
+# ConsensusClusterPlus
+
+# NMF clustering
+
+
 
 # ******************************************************************************
 # corte - asociación de muestras a clústers
 # ******************************************************************************
-clusters_hcl <- cutree(hcl, k = 4)
-clusters_hcl_p <- cutree(hcl_p, k = 4)

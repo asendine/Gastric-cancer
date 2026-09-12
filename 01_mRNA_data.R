@@ -1,23 +1,3 @@
-# Install packages CBIO --------------------------------------------------------
-bioc_packages <- c(
-  "cBioPortalData",
-  "TCGAbiolinks",
-  "SummarizedExperiment",
-  "PCAtools",
-  "ConsensusClusterPlus"
-)
-for (pkg in bioc_packages) {
-  if (!requireNamespace(pkg, quietly = TRUE))
-    BiocManager::install(pkg)
-}
-
-# install-packages-CRAN --------------------------------------------------------
-packages <- c("data.table", "dataframeexplorer", "devtools", "NMF", 'writexl')
-for (pkg in packages) {
-  if (!requireNamespace(pkg, quietly = TRUE))
-    install.packages(pkg)
-}
-
 # libraries --------------------------------------------------------------------
 libraries <- c("cBioPortalData", "TCGAbiolinks", "SummarizedExperiment", "dplyr",
                "ComplexHeatmap", "data.table", "dataframeexplorer", "devtools", 
@@ -82,7 +62,7 @@ sample_id  <- substr(colnames(tpm_tumor), 1, 15)
 stopifnot(anyDuplicated(patient_id) == 0)
 stopifnot(anyDuplicated(sample_id) == 0)
 # genes tpm >= 1 en el 25% de las muestras
-n_min <- ceiling(0.25*ncol(tpm_tumor)) # nº minimo muestras
+n_min <- ceiling(0.25*ncol(tpm_tumor))
 genes_exp <- rowSums(tpm_tumor >= 1) >= n_min # genes con tpm >=1 en el min de muestras
 tpm_filt2 <- tpm_tumor[genes_exp, , drop = FALSE]
 dim(tpm_filt2)
