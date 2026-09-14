@@ -1,23 +1,3 @@
-# Install packages CBIO --------------------------------------------------------
-bioc_packages <- c(
-  "cBioPortalData",
-  "TCGAbiolinks",
-  "SummarizedExperiment",
-  "PCAtools",
-  "ConsensusClusterPlus"
-)
-for (pkg in bioc_packages) {
-  if (!requireNamespace(pkg, quietly = TRUE))
-    BiocManager::install(pkg)
-}
-
-# install-packages-CRAN --------------------------------------------------------
-packages <- c("data.table", "dataframeexplorer", "devtools", "NMF", 'writexl')
-for (pkg in packages) {
-  if (!requireNamespace(pkg, quietly = TRUE))
-    install.packages(pkg)
-}
-
 # libraries --------------------------------------------------------------------
 libraries <- c("cBioPortalData", "TCGAbiolinks", "SummarizedExperiment", "dplyr",
                "ComplexHeatmap", "data.table", "dataframeexplorer", "devtools", 
@@ -83,12 +63,6 @@ sil_table <- data.frame(
   row.names = NULL
 )
 
-# hora de escoger las muestras core. Criterio?
-# pendiente preguntar porque no lo acabo de ver claro.
-
-# buscar los genes diferencialmente más expresados de cada clúster (~10)
-# ahora hay que hacer el análisis de expresión diferencial por cluster
-# obtenemos los datos de conteos crudos para poder usar mejor edger y limma
 counts <- assay(rnaseq_se, "unstranded")
 dim(counts)
 # se obtienen las muestras de tumor primario
@@ -98,7 +72,7 @@ stopifnot(identical(colnames(counts), names(clusters))) # para ver fácilmente q
 # se crea el objeto DGEList: ojo, en vez de hacer genes x muestras, se realiza el análisis
 # de expresión genes x clústers
 # primero se obtiene el vector categórico que hace de "meta" de las muestras
-# haces factor() de clusters cogiendo la estructura de counts, indicando los niveles y etiquetas
+# se hace factor() de clusters cogiendo la estructura de counts, indicando los niveles y etiquetas
 cluster <- factor(clusters[colnames(counts)], levels = 1:6, labels = paste0("C", 1:6))
 dge <- DGEList(counts = counts, group = cluster)
 # ---------
@@ -151,7 +125,7 @@ info_C5 <- head(genes_C5, 10)
 info_C6 <- head(genes_C6, 10)
 
 # 3- hacer el heatmap
-gene_info <- as.data.frame(SummarizedExperiment::rowData(rnaseq_se))
+gene_info <- as.data.frame(rowData(rnaseq_se))
 # C1 ----------------------------------------------------------
 info_C1$gene_id <- rownames(info_C1)
 # la siguiente línea con match busca el valor de gene_name en gene_info antes definido
