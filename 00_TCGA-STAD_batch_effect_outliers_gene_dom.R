@@ -1,23 +1,3 @@
-# Install packages CBIO --------------------------------------------------------
-bioc_packages <- c(
-  "cBioPortalData",
-  "TCGAbiolinks",
-  "SummarizedExperiment",
-  "PCAtools",
-  "ConsensusClusterPlus"
-)
-for (pkg in bioc_packages) {
-  if (!requireNamespace(pkg, quietly = TRUE))
-    BiocManager::install(pkg)
-}
-
-# install-packages-CRAN --------------------------------------------------------
-packages <- c()
-for (pkg in packages) {
-  if (!requireNamespace(pkg, quietly = TRUE))
-    install.packages(pkg)
-}
-
 # libraries --------------------------------------------------------------------
 libraries <- c("cBioPortalData", "TCGAbiolinks", "SummarizedExperiment", "dplyr",
                "ComplexHeatmap", "data.table", "dataframeexplorer", "devtools", 
@@ -50,7 +30,7 @@ colData(rnaseq_se)$TSS <- factor(barcode_parts[, 2])
 colData(rnaseq_se)$PlateId <- factor(barcode_parts[, 6])
 batch_info <- as.data.frame(colData(rnaseq_se)[,c("TSS", "PlateId")])
 
-pca_batch <- prcomp(t(tpm_filt_log), center = TRUE, scale. = FALSE)
+pca_batch <- prcomp(t(tpm_filt_log), center = TRUE, scale. = TRUE)
 variance_explained <- 100*pca_batch$sdev^2/sum(pca_batch$sdev^2)
 sample_position <- match(rownames(pca_batch$x), colnames(rnaseq_se))
 pca_batch_df <- data.frame(sample = rownames(pca_batch$x),
