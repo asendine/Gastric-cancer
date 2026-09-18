@@ -14,14 +14,11 @@ pub_stad_dir <- file.path(cbio_dir, "stad_tcga_pub")
 gdc_stad_dir <- file.path(cbio_dir, "stad_tcga_gdc")
 
 
-# Retreiving cBioPortal data 1**************************************************
+# Retreiving cBioPortal data****************************************************
 cbiopub_clin_sample <- read.delim(file.path(pub_stad_dir, "data_clinical_sample.txt"),
                                   comment.char = "#",check.names = FALSE)
 cbiopub_clin_pat <- read.delim(file.path(pub_stad_dir, "data_clinical_patient.txt"),
                                comment.char = "#",check.names = FALSE)
-# Retreiving cBioPortal data 2**************************************************
-cbiogdc_clin_sample <- read.delim(file.path(gdc_stad_dir, "data_clinical_sample.txt"),
-                                  comment.char = "#",check.names = FALSE)
 # Retreiving TCGA data from .rds files *****************************************
 clinical_tcga <- readRDS(file.path(tcga_dir, "Prepared", "TCGA_STAD_clinical.rds"))
 rnaseq_se <- readRDS(file.path(tcga_dir, "Prepared", "TCGA_STAD_rnaseq_se.rds"))
@@ -53,7 +50,7 @@ hcl_p <- hclust(dist_pearson, method = "average")
 # corte - asociación de muestras a clústers
 # ******************************************************************************
 
-k <- 3
+k <- 4
 
 cluster_hcl <- factor(cutree(hcl, k), levels = 1:3)
 cluster_hcl_p <- factor(cutree(hcl_p, k), levels = 1:3)

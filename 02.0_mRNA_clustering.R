@@ -67,7 +67,7 @@ plot(hcl_p, labels = FALSE, hang = -1,
 # Calinski–Harabasz: mide el grado de separación entre grupos y si estos son 
 # compactos. Mayor = mejor.
 
-k_values <- 2:6
+k_values <- 2:10
 
 arboles <- list(euclidean_wardD2 = hcl, pearson_average = hcl_p)
 
@@ -152,7 +152,7 @@ mejores_k_pearson
 cc_input <- as.matrix(tpm_z)
 cc_results <- ConsensusClusterPlus(
   d             = cc_input,
-  maxK          = 6,             # evalúa k = 2,...,6
+  maxK          = 10,             # evalúa k = 2,...,6
   reps          = 500,           # 500 remuestreos
   pItem         = 0.80,          # 80% de las muestras en cada repetición
   pFeature      = 0.80,          # 80% de los genes en cada repetición
@@ -165,12 +165,20 @@ cc_results <- ConsensusClusterPlus(
   writeTable    = FALSE,
   verbose       = TRUE)
 
+ml <- vector("list", length(cc_results))
+
+for (k in 2:length(cc_results)) {
+  ml[[k]] <- cc_results[[k]]$consensusMatrix
+}
+
+ConsensusClusterPlus:::CDF(ml)
+
 # ******************************************************************************
 # clustering 4: ConsensusClusterPlus + 1-pearson + average
 # ******************************************************************************
 cc_resultsp <- ConsensusClusterPlus(
   d             = cc_input,
-  maxK          = 6,             # evalúa k = 2,...,6
+  maxK          = 10,             # evalúa k = 2,...,6
   reps          = 500,           # 500 remuestreos
   pItem         = 0.80,          # 80% de las muestras en cada repetición
   pFeature      = 0.80,          # 80% de los genes en cada repetición
@@ -183,15 +191,21 @@ cc_resultsp <- ConsensusClusterPlus(
   writeTable    = FALSE,
   verbose       = TRUE)
 
+mlp <- vector("list", length(cc_resultsp))
+
+for (k in 2:length(cc_resultsp)) {
+  mlp[[k]] <- cc_resultsp[[k]]$consensusMatrix
+}
+
+ConsensusClusterPlus:::CDF(mlp)
+
 # ******************************************************************************
 # ConsensusClusterPlus metrics
 # ******************************************************************************
-# PAC = Proportion of Ambiguous Clustering, es la proporción de valores de la 
-# matriz de consenso que se encuentran entre 0.1 y 0.9, es decir, que no son ni 
-# 0 ni 1. Un valor bajo de PAC indica que la mayoría de las muestras se asignan 
-# a un solo cluster con alta probabilidad, lo que sugiere una buena estabilidad 
-# del clustering.
-# miramos PACs (bajo = mejor)
+# PAC
+# ICL
+# CDF (DELTA AREA)
+
 pac_results <- data.frame(
   k = 2:length(cc_results),
   PAC = sapply(2:length(cc_results), function(k) {
@@ -201,15 +215,6 @@ pac_results <- data.frame(
   }
   )
 )
-
-pac_results
-# el icl es un índice de estabilidad de clustering que combina la información 
-# de la matriz de consenso y la asignación de clusters. Un valor más alto de ICL
-# indica una mayor estabilidad del clustering.
-icl_results <- calcICL(cc_results, plot = NULL, writeTable = FALSE)
-icl_results$clusterConsensus
-
-# ******************************************************************************
 pac_resultsp <- data.frame(
   k = 2:length(cc_resultsp),
   PAC = sapply(2:length(cc_resultsp), function(k) {
@@ -220,19 +225,48 @@ pac_resultsp <- data.frame(
   )
 )
 
-pac_resultsp
+# ******************************************************************************
+# GRÁFICO PAC
+# ******************************************************************************
+pac_plot <- rbind(transform(pac_results,  method = "Euclidean"),
+                  transform(pac_resultsp, method = "Pearson"))
 
-pac_resultsp[which.min(pac_resultsp$PAC), ]
+ggplot(pac_plot, aes(x = k, y = PAC, group = method, shape = method)) +
+  geom_line() +
+  geom_point(size = 2.5) +
+  scale_x_continuous(breaks = sort(unique(pac_plot$k))) +
+  labs(x = "k", y = "PAC", shape = NULL) +
+  theme_classic()
 
-icl_resultsp <- calcICL(cc_resultsp, plot = NULL, writeTable = FALSE)
-icl_resultsp$clusterConsensus
+# ******************************************************************************
+# GRÁFICO ICL
+# ******************************************************************************
+k_selected <- c(3, 4, 5)
+
+icl_euclidean <- as.data.frame(icl_results$clusterConsensus)
+icl_pearson   <- as.data.frame(icl_resultsp$clusterConsensus)
+icl_euclidean <- icl_euclidean[icl_euclidean$k %in% k_selected,]
+icl_pearson <- icl_pearson[icl_pearson$k %in% k_selected,]
+icl_euclidean$method <- "Euclidean + Ward.D2"
+icl_pearson$method   <- "Pearson + Average"
+
+icl_plot <- rbind(icl_euclidean,icl_pearson)
+
+ggplot(icl_plot, aes(x = factor(k), y = clusterConsensus, colour = method, group = method)) +
+  geom_point(size = 3, position = position_dodge(width = 0.35)) +
+  geom_text(aes(label = cluster), position = position_dodge(width = 0.35), 
+            hjust = -1, size = 4, show.legend = FALSE) +
+  scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.2)) +
+  labs(title = "ICL values per k and method", x = "k", y = "Cluster consensus", 
+       colour = "Method") +
+  theme_classic()
 
 # ******************************************************************************
 # NMF clustering
 # ******************************************************************************
 nmf_rank <- nmfEstimateRank(
   x      = tpm_ind,
-  range  = 3:6,
+  range  = 3:8,
   method = "brunet",
   nrun   = 30,
   seed   = 1234)
@@ -242,19 +276,16 @@ saveRDS(nmf_rank, file = "misc/data/nmf_rank.rds")
 # ******************************************************************************
 # NMF metrics
 # ******************************************************************************
-# cophenetic = reproductibilidad asignaciones
-# dispersion = grado de consenso a valores puros 0 u 1
-# evar = varianza explicada
-# rss y residuals = errores respecto la matriz original
-# silhouette = separación de los grupos (coef)
-# sparseness = indica cada componente si esta dominado por pocos genes o muestras
+# cophenetic: measures how reliably the same samples are assigned to the same cluster.
+# sil.coef: evalúa la separación de las muestras en la matriz de coeficientes.
+# sil. con: silueta del consenso (1 − consenso). Compara la proximidad de una 
+# muestra a su propio clúster con la proximidad al clúster alternativo más cercano
 nmf_rank <- readRDS("misc/data/nmf_rank.rds")
 plot(nmf_rank)
 
-consensusmap(nmf_rank$fit[["3"]], labRow = NA, labCol = NA, tracks = NA)
 consensusmap(nmf_rank$fit[["4"]], labRow = NA, labCol = NA, tracks = NA)
-consensusmap(nmf_rank$fit[["5"]], labRow = NA, labCol = NA, tracks = NA)
 consensusmap(nmf_rank$fit[["6"]], labRow = NA, labCol = NA, tracks = NA)
+consensusmap(nmf_rank$fit[["7"]], labRow = NA, labCol = NA, tracks = NA)
 
 criteria_k <- data.frame(K=nmf_rank[["measures"]][["rank"]], 
                          Sil.coef = nmf_rank[["measures"]][["silhouette.coef"]],
@@ -262,20 +293,43 @@ criteria_k <- data.frame(K=nmf_rank[["measures"]][["rank"]],
 criteria_k
 
 # ******************************************************************************
+# GRÁFICO SILUETAS NMF
+# ******************************************************************************
+k_selected <- c(4, 6, 7)
+
+sil_plot <- do.call(rbind, lapply(k_selected, function(k) {
+  sil <- silhouette(nmf_rank$fit[[as.character(k)]], what = "consensus")
+  df <- as.data.frame(sil[, c("cluster", "sil_width")])
+  df <- df[order(df$cluster, -df$sil_width), ]
+  df$position <- seq_len(nrow(df))
+  df$panel <- sprintf("k = %s | Silueta media = %.3f", k, mean(df$sil_width))
+  df$mean_sil <- mean(df$sil_width)
+  df
+}))
+
+sil_plot$panel <- factor(sil_plot$panel, levels = unique(sil_plot$panel))
+
+
+ggplot(sil_plot, aes(x = position, y = sil_width, fill = factor(cluster))) +
+  geom_col(width = 1) +
+  geom_hline(data = unique(sil_plot[, c("panel", "mean_sil")]), 
+             aes(yintercept = mean_sil), colour = "red", linetype = "dashed") +
+  facet_wrap(~ panel, ncol = 3) +
+  labs(x = "Muestras", y = "Anchura de silueta", fill = "Clúster") +
+  theme_minimal() +
+  theme(axis.text.x = element_blank(), panel.grid.major.x = element_blank(),
+        panel.grid.minor = element_blank())
+
+# ******************************************************************************
 # número de clústers
 # ******************************************************************************
 
-# hcl y hcl_p
-# euclidean -> k = 3 o quizá 5 
+# hcl
 # pearson -> k = 3 o 4 aprox igual
 
 # ConsensusClusterPlus
-# euc -> k = 6 (0.5153072)
-# pearson -> k = 6 (0.4740510)
-# cuanto más alto el valor de k menor es el PAC. Esto no cuadra mucho, pdnte investigar.
+# pearson -> k = 4
 
 # NMF clustering
-# k = 3 - Sil.coef(0.6362434) - Sil.con(0.9277994)
-
-# procederemos con k = 3 por ahora
+# k = 4 o 6
 
