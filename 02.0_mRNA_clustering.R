@@ -56,26 +56,18 @@ plot(hcl_p, labels = FALSE, hang = -1,
 # ******************************************************************************
 # hclust metrics
 # ******************************************************************************
-
-# silhouette (-1 a 1): distancia media de la muestra en su cluster vs otro cluster.
+# silhouette: distancia media de la muestra en su cluster vs otro cluster.
 # Media por clúster o global.
-
-# Índice de Dunn: La distancia más pequeña entre dos puntos que pertenecen a 
-# clústeres diferentes / la distancia más grande entre dos puntos dentro del 
-# mismo clúster. Mayor = mejor.
-
 # Calinski–Harabasz: mide el grado de separación entre grupos y si estos son 
 # compactos. Mayor = mejor.
+# cindex: indica compactación y división de clusters
+# mcclain: Within-cluster distance/Between-cluster distance
 
-k_values <- 2:10
+k_values <- 3:10
 
 arboles <- list(euclidean_wardD2 = hcl, pearson_average = hcl_p)
-
 distancias <- list(euclidean_wardD2 = d, pearson_average = dist_pearson)
-
 metricas <- data.frame()
-
-silhouette_por_cluster <- data.frame()
 
 for (metodo in names(arboles)) {
   for (k in k_values) {
@@ -89,44 +81,30 @@ for (metodo in names(arboles)) {
     metricas <- rbind(metricas, data.frame(metodo = metodo,
                                            k = k,
                                            silhouette = res$avg.silwidth,
-                                           dunn = res$dunn,
                                            calinski_harabasz = res$ch))
-    # y las siluetas por cluster
-    silhouette_por_cluster <- rbind(silhouette_por_cluster, data.frame(
-      metodo = metodo,
-      k = k,
-      cluster = seq_len(k),
-      n = res$cluster.size,
-      silhouette = as.numeric(res$clus.avg.silwidths)))
   }
 }
 
 metricas
 
-silhouette_por_cluster
-
 # ******************************************************************************
 # usando NbClust (lo mismo pero más automátizado)
 # ******************************************************************************
-
-indices <- c("silhouette", "dunn", "cindex", "mcclain")
-
+indices <- c("silhouette", "cindex", "mcclain")
 nb_euc <- list()
 nb_pearson <- list()
 
 for (indice in indices) {
-  
   nb_euc[[indice]] <- NbClust(data = NULL,
                               diss = d,
                               distance = NULL,
-                              min.nc = 3, max.nc = 6,
+                              min.nc = 3, max.nc = 10,
                               method = "ward.D2",
                               index = indice)
-  
   nb_pearson[[indice]] <- NbClust(data = NULL,
                                   diss = dist_pearson,
                                   distance = NULL,
-                                  min.nc = 3, max.nc = 6,
+                                  min.nc = 3, max.nc = 10,
                                   method = "average",
                                   index = indice)
 }
@@ -134,17 +112,48 @@ for (indice in indices) {
 # Valores de los indices para cada k
 metricas_nb_euc <- sapply(nb_euc, "[[", "All.index")
 metricas_nb_pearson <- sapply(nb_pearson, "[[", "All.index")
-
-# k recomendado por cada indice y valor obtenido
-mejores_k_euc <- sapply(nb_euc, "[[", "Best.nc")
-mejores_k_pearson <- sapply(nb_pearson, "[[", "Best.nc")
-
-
 metricas_nb_euc
 metricas_nb_pearson
 
-mejores_k_euc
-mejores_k_pearson
+# ******************************************************************************
+# Gráfico siluetas
+# ******************************************************************************
+k_selected <- c(4, 6, 8)
+metodos <- list("Euclidean + Ward.D2" = list(hc = hcl, distancia = d),
+                "1-Pearson + average" = list(hc = hcl_p, distancia = dist_pearson))
+
+# Calcular y ordenar las siluetas
+sil_plot <- do.call(rbind, lapply(names(metodos), function(m) {
+  do.call(rbind, lapply(k_selected, function(k) {
+    grupos <- cutree(metodos[[m]]$hc, k = k)
+    sil <- silhouette(grupos, metodos[[m]]$distancia)
+    df <- as.data.frame(sil[, c("cluster", "sil_width")])
+    df <- df[order(df$cluster, -df$sil_width), ]
+    df$position <- seq_len(nrow(df))
+    df$metodo <- m
+    df$k <- k
+    df$mean_sil <- mean(df$sil_width)
+    df
+  }))
+}))
+
+sil_plot$metodo <- factor(sil_plot$metodo, levels = names(metodos))
+sil_plot$k <- factor(sil_plot$k, levels = k_selected)
+medias <- unique(sil_plot[, c("metodo", "k", "mean_sil")])
+
+# Dos filas de métodos y tres columnas de k
+ggplot(sil_plot, aes(x = position, y = sil_width, fill = factor(cluster))) +
+  geom_col(width = 1) +
+  geom_hline(data = medias, aes(yintercept = mean_sil), 
+             colour = "red", linetype = "dashed") +
+  geom_text(data = medias, 
+            aes(x = Inf, y = Inf, label = sprintf("Media = %.3f", mean_sil)),
+            inherit.aes = FALSE, hjust = 1.1, vjust = 1.5, size = 3.5) +
+  facet_grid(metodo ~ k, labeller = labeller(k = label_both)) +
+  labs(x = "Muestras", y = "Anchura de silueta", fill = "Clúster") +
+  theme_minimal() +
+  theme(axis.text.x = element_blank(), panel.grid.major.x = element_blank(),
+        panel.grid.minor = element_blank())
 
 # ******************************************************************************
 # clustering 3: ConsensusClusterPlus euclidean + ward.d2
@@ -152,7 +161,7 @@ mejores_k_pearson
 cc_input <- as.matrix(tpm_z)
 cc_results <- ConsensusClusterPlus(
   d             = cc_input,
-  maxK          = 10,             # evalúa k = 2,...,6
+  maxK          = 6,             # evalúa k = 2,...,6
   reps          = 500,           # 500 remuestreos
   pItem         = 0.80,          # 80% de las muestras en cada repetición
   pFeature      = 0.80,          # 80% de los genes en cada repetición
@@ -166,7 +175,6 @@ cc_results <- ConsensusClusterPlus(
   verbose       = TRUE)
 
 ml <- vector("list", length(cc_results))
-
 for (k in 2:length(cc_results)) {
   ml[[k]] <- cc_results[[k]]$consensusMatrix
 }
@@ -178,7 +186,7 @@ ConsensusClusterPlus:::CDF(ml)
 # ******************************************************************************
 cc_resultsp <- ConsensusClusterPlus(
   d             = cc_input,
-  maxK          = 10,             # evalúa k = 2,...,6
+  maxK          = 6,             # evalúa k = 2,...,6
   reps          = 500,           # 500 remuestreos
   pItem         = 0.80,          # 80% de las muestras en cada repetición
   pFeature      = 0.80,          # 80% de los genes en cada repetición
@@ -192,7 +200,6 @@ cc_resultsp <- ConsensusClusterPlus(
   verbose       = TRUE)
 
 mlp <- vector("list", length(cc_resultsp))
-
 for (k in 2:length(cc_resultsp)) {
   mlp[[k]] <- cc_resultsp[[k]]$consensusMatrix
 }
@@ -224,6 +231,8 @@ pac_resultsp <- data.frame(
   }
   )
 )
+icl_results <- calcICL(cc_results)
+icl_resultsp <- calcICL(cc_resultsp)
 
 # ******************************************************************************
 # GRÁFICO PAC
@@ -325,7 +334,7 @@ ggplot(sil_plot, aes(x = position, y = sil_width, fill = factor(cluster))) +
 # ******************************************************************************
 
 # hcl
-# pearson -> k = 3 o 4 aprox igual
+# pearson -> k = 4
 
 # ConsensusClusterPlus
 # pearson -> k = 4

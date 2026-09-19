@@ -13,8 +13,8 @@ for (i in libraries) {
 # ******************************************************************************
 tcga_dir <- Sys.getenv("TCGA_DATA")
 rnaseq_se <- readRDS(file.path(tcga_dir, "Prepared", "TCGA_STAD_rnaseq_se.rds"))
+tpm_ind <- readRDS(here("misc", "data", "tpm_ind.rds"))
 # ******************************************************************************
-
 
 # ******************************************************************************
 # BACTH EFFECT
@@ -30,7 +30,7 @@ colData(rnaseq_se)$TSS <- factor(barcode_parts[, 2])
 colData(rnaseq_se)$PlateId <- factor(barcode_parts[, 6])
 batch_info <- as.data.frame(colData(rnaseq_se)[,c("TSS", "PlateId")])
 
-pca_batch <- prcomp(t(tpm_filt_log), center = TRUE, scale. = TRUE)
+pca_batch <- prcomp(t(tpm_ind), center = TRUE, scale. = FALSE)
 variance_explained <- 100*pca_batch$sdev^2/sum(pca_batch$sdev^2)
 sample_position <- match(rownames(pca_batch$x), colnames(rnaseq_se))
 pca_batch_df <- data.frame(sample = rownames(pca_batch$x),
@@ -68,21 +68,18 @@ ggplot(pca_batch_df, aes(PC1, PC2)) +
 # OUTLIERS
 # ******************************************************************************
 # para buscar outliers se realiza un PCA. Se usa PCAtools
-pca_outliers <- PCAtools::pca(mat = tpm_filt_log, center = TRUE, 
+pca_outliers <- pca(mat = tpm_ind, center = TRUE, 
                               scale = FALSE, removeVar = NULL)
 
 # screeplot para ver % var explicada por cada componente
-PCAtools::screeplot(pcaobj = pca_outliers, 
-                    components = PCAtools::getComponents(pca_outliers, 1:20), 
-                    title = "PCA mRNA")
+screeplot(pcaobj = pca_outliers, components = getComponents(pca_outliers, 1:15), 
+          title = "PCA mRNA")
 
 # no está mal hacer un pairsplot entre las diferentes componentes, pero si hay
 # muchas muestras y queremos ver muchas componentes, entonces no se verá bien
-PCAtools::pairsplot(pcaobj = pca_outliers, 
-                    components = PCAtools::getComponents(pca_outliers, 1:4),
-                    triangle  = TRUE) # a partir de 4 la cosa empeora
+pairsplot(pcaobj = pca_outliers, components = getComponents(pca_outliers, 1:3),
+          triangle  = TRUE) # a partir de 4 la cosa empeora
 # a partir de los plots anteriores, no se aprecian outliers
-
 
 # ******************************************************************************
 # GENES DOMINANTES
@@ -91,9 +88,9 @@ PCAtools::pairsplot(pcaobj = pca_outliers,
 # se obtiene la info de genes
 gene_info <- as.data.frame(rowData(rnaseq_se))
 # se obtiene la posición de las filas de los genes que nos interesan con match
-gene_index <- match(rownames(tpm_filt_log), rownames(rnaseq_se))
+gene_index <- match(rownames(tpm_ind), rownames(rnaseq_se))
 # se crea el dataset específico con ambas notaciones
-gene_map <- data.frame(ensembl_id = rownames(tpm_filt_log),
+gene_map <- data.frame(ensembl_id = rownames(tpm_ind),
                        gene_name = gene_info$gene_name[gene_index])
 # a partir de aquí se crea una función para determinar los genes que más contribuyen
 # dado un pca, una componente, la leyenda y el nº de genes a comprobar
@@ -114,9 +111,7 @@ get_top_genes <- function(pca_object, pc, gene_map, n = 10) {
 }
 
 # aquí se puede ver qué genes dominan las componentes en este caso la 1 y 2
-cont_PC1 <- get_top_genes(pca_outliers, "PC1", gene_map, n = 10)
+cont_PC1 <- get_top_genes(pca_outliers, "PC1", gene_map, n = 30)
 cont_PC2 <- get_top_genes(pca_outliers, "PC2", gene_map, n = 10)
 cont_PC1
 cont_PC2
-
-# pendiente ver si estos genes se asocian con alguna característica concreta
