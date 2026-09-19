@@ -30,9 +30,7 @@ rnaseq_se <- readRDS(file.path(tcga_dir, "Prepared", "TCGA_STAD_rnaseq_se.rds"))
 # ******************************************************************************
 # CLUSTERING
 # ******************************************************************************
-# data retrieving from 01_mRNA_data.R
 tpm_ind <- readRDS(here("misc", "data", "tpm_ind.rds"))
-# t(matrix) para que la disimilitud se calcule usando los genes como variables
 tpm_z <- t(scale(t(tpm_ind)))
 
 
@@ -304,7 +302,7 @@ criteria_k
 # ******************************************************************************
 # GRÁFICO SILUETAS NMF
 # ******************************************************************************
-k_selected <- c(4, 6, 7)
+k_selected <- c(4, 6)
 
 sil_plot <- do.call(rbind, lapply(k_selected, function(k) {
   sil <- silhouette(nmf_rank$fit[[as.character(k)]], what = "consensus")
@@ -340,5 +338,5 @@ ggplot(sil_plot, aes(x = position, y = sil_width, fill = factor(cluster))) +
 # pearson -> k = 4
 
 # NMF clustering
-# k = 4 o 6
+# k = 4
 

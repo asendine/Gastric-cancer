@@ -3,7 +3,7 @@ libraries <- c("cBioPortalData", "TCGAbiolinks", "SummarizedExperiment", "dplyr"
                "ComplexHeatmap", "data.table", "dataframeexplorer", "devtools", 
                "cluster", "edgeR", 'limma', 'grid', 'ggplot2', 'PCAtools', 
                'ConsensusClusterPlus', 'NMF', 'readxl', 'here', 'pROC',
-               'tidyestimate', 'tidyr')
+               'tidyestimate', 'tidyr', 'uwot')
 for (i in libraries) {
   library(i, character.only = TRUE)
 }
@@ -18,10 +18,6 @@ tpm_ind <- readRDS(here("misc", "data", "tpm_ind.rds"))
 
 # ******************************************************************************
 # BACTH EFFECT
-# ******************************************************************************
-# Publicación TCGA describe un ligero batch effect en datos de miRNA (1/4 analizados)
-# pero no es trascendente. También se puede hacer la visualización directa en la 
-# web de MDAnderson sin tener que hacerlo en R (tienen un web browser para ello, PCA Plus).
 # ******************************************************************************
 # A partir del nombre de las muestras se obtiene el id de placa y el TSS (origen muestra)
 # que estan en las posiciones 6 y 2 respectivamente (TCGA-BR-4257-01A-01R-1131-13).
@@ -63,55 +59,65 @@ ggplot(pca_batch_df, aes(PC1, PC2)) +
   theme_bw() +
   theme(legend.position = "none", strip.text = element_text(face = "bold"))
 
-
 # ******************************************************************************
 # OUTLIERS
 # ******************************************************************************
-# para buscar outliers se realiza un PCA. Se usa PCAtools
 pca_outliers <- pca(mat = tpm_ind, center = TRUE, 
                               scale = FALSE, removeVar = NULL)
-
-# screeplot para ver % var explicada por cada componente
-screeplot(pcaobj = pca_outliers, components = getComponents(pca_outliers, 1:15), 
+screeplot(pcaobj = pca_outliers, components = getComponents(pca_outliers, 1:10), 
           title = "PCA mRNA")
-
-# no está mal hacer un pairsplot entre las diferentes componentes, pero si hay
-# muchas muestras y queremos ver muchas componentes, entonces no se verá bien
 pairsplot(pcaobj = pca_outliers, components = getComponents(pca_outliers, 1:3),
-          triangle  = TRUE) # a partir de 4 la cosa empeora
-# a partir de los plots anteriores, no se aprecian outliers
+          triangle  = TRUE)
 
 # ******************************************************************************
 # GENES DOMINANTES
 # ******************************************************************************
-# ahora se puede buscar si hay genes que dominen alguna componente concreta
-# se obtiene la info de genes
 gene_info <- as.data.frame(rowData(rnaseq_se))
-# se obtiene la posición de las filas de los genes que nos interesan con match
 gene_index <- match(rownames(tpm_ind), rownames(rnaseq_se))
-# se crea el dataset específico con ambas notaciones
 gene_map <- data.frame(ensembl_id = rownames(tpm_ind),
                        gene_name = gene_info$gene_name[gene_index])
-# a partir de aquí se crea una función para determinar los genes que más contribuyen
+
 # dado un pca, una componente, la leyenda y el nº de genes a comprobar
 get_top_genes <- function(pca_object, pc, gene_map, n = 10) { 
   loading_values <- pca_object$loadings[, pc] 
-  # se obtienen los pesos
   top_idx <- order(abs(loading_values), decreasing = TRUE)[seq_len(n)]
-  # se obtienen los n pesos por valor absoluto decreciente
   ensembl_ids <- rownames(pca_object$loadings)[top_idx]
-  # se obtienen los ids de los genes con esos pesos
   data.frame(PC = pc,
              gene_name = gene_map$gene_name[match(ensembl_ids, gene_map$ensembl_id)],
              ensembl_id = ensembl_ids,
              loading = loading_values[top_idx],
              contribution_pct = 100*loading_values[top_idx]^2)
-  # se hace un dataframe con la pc elegida, se busca el gene name con la leyenda indicada,
-  # se indica el ensemble id, el peso obtenido y las contribuciones
 }
 
-# aquí se puede ver qué genes dominan las componentes en este caso la 1 y 2
-cont_PC1 <- get_top_genes(pca_outliers, "PC1", gene_map, n = 30)
+cont_PC1 <- get_top_genes(pca_outliers, "PC1", gene_map, n = 10)
 cont_PC2 <- get_top_genes(pca_outliers, "PC2", gene_map, n = 10)
 cont_PC1
 cont_PC2
+
+# umap
+idx <- match(substr(colnames(tpm_ind), 1, 15), cbiopub_clin_sample$SAMPLE_ID)
+set.seed(1234)
+umap_result <- umap(X = t(as.matrix(tpm_ind)), 
+                    n_neighbors = 30, 
+                    min_dist    = 0.1, # cuánto pueden compactarse los puntos en el mapa.
+                    metric      = "correlation", 
+                    verbose     = FALSE)
+umap_df <- data.frame(UMAP1   = umap_result[, 1],
+                      UMAP2   = umap_result[, 2],
+                      subtipo = cbiopub_clin_sample$MOLECULAR_SUBTYPE[idx])
+
+umap_df$subtipo <- as.character(umap_df$subtipo)
+umap_df$subtipo[is.na(umap_df$subtipo)] <- "Sin etiqueta"
+
+ggplot(umap_df, aes(UMAP1, UMAP2, colour = subtipo)) +
+  geom_point(size = 4, alpha = 0.8) +
+  scale_colour_manual(values = c(
+    CIN = "darkorchid4",
+    EBV = "#00A087",
+    GS  = "#B8860B",
+    MSI = "#FFFF00",
+    "Sin etiqueta" = "grey75")) +
+  coord_equal() +
+  labs(title = "UMAP TCGA-STAD", x = "UMAP 1", y = "UMAP 2", 
+       colour = "Subtipo TCGA") +
+  theme_classic()

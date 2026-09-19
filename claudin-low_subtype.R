@@ -1,23 +1,3 @@
-# Install packages CBIO --------------------------------------------------------
-bioc_packages <- c(
-  "cBioPortalData",
-  "TCGAbiolinks",
-  "SummarizedExperiment",
-  "PCAtools",
-  "ConsensusClusterPlus"
-)
-for (pkg in bioc_packages) {
-  if (!requireNamespace(pkg, quietly = TRUE))
-    BiocManager::install(pkg)
-}
-
-# install-packages-CRAN --------------------------------------------------------
-packages <- c()
-for (pkg in packages) {
-  if (!requireNamespace(pkg, quietly = TRUE))
-    install.packages(pkg)
-}
-
 # libraries --------------------------------------------------------------------
 libraries <- c("cBioPortalData", "TCGAbiolinks", "SummarizedExperiment", "dplyr",
                "ComplexHeatmap", "data.table", "dataframeexplorer", "devtools", 
@@ -135,12 +115,8 @@ gallo_signature_old[genes_to_update] <- gene_check$Approved.symbol[
 tpm_gene_symbol <- gene_info$gene_name[match(rownames(tpm), gene_info$gene_id)]
 
 # se construye el df
-tpm_df <- data.frame(
-  gene_id = rownames(tpm),
-  gene_symbol = tpm_gene_symbol,
-  tpm,
-  check.names = FALSE)
-
+tpm_df <- data.frame(gene_id = rownames(tpm), gene_symbol = tpm_gene_symbol, tpm,
+                     check.names = FALSE)
 if (anyDuplicated(tpm_df$gene_id)) {stop("tpm_df contiene gene_id duplicados.")}
 
 # se filtra por la firma de Gallo
@@ -200,14 +176,14 @@ wilcox.test(gallo_score ~ claudin_low_gallo, data = validation_df,  exact = FALS
 # claudin-low o no-low
 # ******************************************************************************
 # se calcula el AUC
-roc_gallo <- pROC::roc(
+roc_gallo <- roc(
   response = validation_df$claudin_low_gallo,
   predictor = validation_df$gallo_score,
   levels = c(FALSE, TRUE),
   direction = "<",
   quiet = TRUE
 )
-pROC::auc(roc_gallo)
+auc(roc_gallo)
 # sensibilidad: claudin-low correctamente identificadas
 # especificidad: no claudin-low correctamente identificadas
 # se calcula cada uno en cada punto y se obtiene una métrica que resume la 

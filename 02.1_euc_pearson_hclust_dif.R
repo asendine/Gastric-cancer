@@ -49,7 +49,7 @@ mc <- vapply(seq_len(k), function(i) {
 
 cluster_colors <- setNames(hcl.colors(k, palette = "Dark 3"), con)
 subtype_colors <- c(CIN = "darkorchid4", EBV = "#00A087", GS = "#B8860B", 
-                    MSI = "#FF69B4")
+                    MSI = "#FFFF00")
 
 resultados <- list()
 heatmaps <- list()

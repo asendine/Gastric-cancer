@@ -2,7 +2,7 @@
 libraries <- c("cBioPortalData", "TCGAbiolinks", "SummarizedExperiment", "dplyr",
                "ComplexHeatmap", "data.table", "dataframeexplorer", "devtools", 
                "cluster", "edgeR", 'limma', 'grid', 'ggplot2', 'PCAtools', 
-               'ConsensusClusterPlus', 'NMF', 'writexl')
+               'ConsensusClusterPlus', 'NMF', 'writexl', 'uwot')
 for (i in libraries) {
   library(i, character.only = TRUE)
 }
@@ -96,7 +96,7 @@ mc <- vapply(seq_len(k), function(i) {
 
 cluster_colors <- setNames(hcl.colors(k, palette = "Dark 3"), con)
 subtype_colors <- c(CIN = "darkorchid4", EBV = "#00A087",
-                    GS = "#B8860B", MSI = "#FF69B4")
+                    GS = "#B8860B", MSI = "#FFFF00")
 
 resultados_extra <- list()
 heatmaps_extra <- list()
